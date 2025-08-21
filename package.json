@@ -3,15 +3,18 @@
   "version": "1.0.0",
   "description": "PAdES-B-T compliant ePrescription POC with CPS card integration",
   "private": true,
-  "workspaces": [
-    "packages/*"
-  ],
   "scripts": {
-    "dev": "concurrently \"npm run dev --workspace=@pades-poc/backend\" \"npm run dev --workspace=@pades-poc/frontend\"",
-    "build": "npm run build --workspaces",
-    "test": "npm run test --workspaces",
-    "clean": "npm run clean --workspaces",
-    "lint": "eslint packages/*/src --ext .ts,.tsx"
+    "dev": "concurrently \"pnpm --filter @pades-poc/backend dev\" \"pnpm --filter @pades-poc/frontend dev\"",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:coverage": "pnpm -r test:coverage",
+    "clean": "pnpm -r clean",
+    "lint": "eslint packages/*/src --ext .ts,.tsx",
+    "install:all": "pnpm install",
+    "dev:backend": "pnpm --filter @pades-poc/backend dev",
+    "dev:frontend": "pnpm --filter @pades-poc/frontend dev",
+    "build:backend": "pnpm --filter @pades-poc/backend build",
+    "build:frontend": "pnpm --filter @pades-poc/frontend build"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
@@ -27,5 +30,10 @@
     "digital-signature",
     "healthcare"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.6"
 }
