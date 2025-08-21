@@ -1,0 +1,31 @@
+{
+  "name": "pades-bt-eprescription-poc",
+  "version": "1.0.0",
+  "description": "PAdES-B-T compliant ePrescription POC with CPS card integration",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=@pades-poc/backend\" \"npm run dev --workspace=@pades-poc/frontend\"",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "clean": "npm run clean --workspaces",
+    "lint": "eslint packages/*/src --ext .ts,.tsx"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.4.5",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "eslint": "^8.57.0"
+  },
+  "keywords": [
+    "pades",
+    "eprescription",
+    "cps-card",
+    "digital-signature",
+    "healthcare"
+  ],
+  "license": "MIT"
+}
