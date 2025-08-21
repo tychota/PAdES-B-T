@@ -25,7 +25,7 @@ packages/
 ## 📋 Prerequisites
 
 - **Node.js**: ≥18.0.0
-- **pnpm**: ≥8.0.0 (Install with `npm install -g pnpm`)
+- **pnpm**: ≥10.0.0 (Install with `npm install -g pnpm`)
 
 ## 🚀 Quick Start
 

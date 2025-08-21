@@ -14,18 +14,18 @@
   },
   "dependencies": {
     "@pades-poc/shared": "workspace:*",
-    "express": "^4.19.2",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
     "winston": "^3.11.0"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
     "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.3",
     "@types/node": "catalog:",
+    "@vitest/coverage-v8": "^3.2.4",
     "tsx": "^4.7.1",
     "typescript": "catalog:",
-    "vitest": "catalog:",
-    "@vitest/coverage-v8": "^1.6.0"
+    "vitest": "catalog:"
   }
 }
