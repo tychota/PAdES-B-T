@@ -1,6 +1,7 @@
+import { generateShortId } from "@pades-poc/shared";
 import { Router } from "express";
 
-import { logger } from "../index";
+import { padesBackendLogger, logPAdES } from "../index";
 
 import type {
   HealthResponse,
@@ -29,15 +30,29 @@ router.get("/health", (req, res) => {
     version: "1.0.0",
   };
 
-  logger.info("Health check requested", { ip: req.ip, userAgent: req.get("User-Agent") });
+  const entry = padesBackendLogger.createLogEntry("info", "backend", "Health check requested", {
+    ip: req.ip,
+    userAgent: req.get("User-Agent"),
+  });
+  logPAdES(entry);
+
   res.json(response);
 });
 
 // Generate demo PDF
 router.post("/pdf/generate", (req, res) => {
   const request = req.body as GenerateDemoPDFRequest;
+  const workflowId = generateShortId();
 
-  logger.info("Demo PDF generation requested", { config: request.config });
+  const entry = padesBackendLogger.logWorkflowStep(
+    "info",
+    "backend",
+    "prepare",
+    "Demo PDF generation requested",
+    workflowId,
+    { config: request.config },
+  );
+  logPAdES(entry);
 
   // TODO: Implement PDF generation
   const response: GenerateDemoPDFResponse = {
@@ -56,11 +71,21 @@ router.post("/pdf/generate", (req, res) => {
 // Step 1: Prepare PDF for signing
 router.post("/pdf/prepare", (req, res) => {
   const request = req.body as PrepareRequest;
+  const workflowId = generateShortId();
+  const pdfSize = Buffer.from(request.pdfBase64 || "", "base64").length;
 
-  logger.info("PDF prepare requested", {
-    configPresent: !!request.config,
-    pdfSize: request.pdfBase64.length || 0,
-  });
+  const entry = padesBackendLogger.logWorkflowStep(
+    "info",
+    "backend",
+    "prepare",
+    "PDF prepare requested",
+    workflowId,
+    {
+      configPresent: !!request.config,
+      pdfSize,
+    },
+  );
+  logPAdES(entry);
 
   // TODO: Implement PDF preparation
   const response: PrepareResponse = {
@@ -81,11 +106,20 @@ router.post("/pdf/prepare", (req, res) => {
 // Step 2: Pre-sign (build signed attributes)
 router.post("/pdf/presign", (req, res) => {
   const request = req.body as PresignRequest;
+  const workflowId = generateShortId();
 
-  logger.info("PDF presign requested", {
-    messageDigestPresent: !!request.messageDigestB64,
-    certPresent: !!request.signerCertPem,
-  });
+  const entry = padesBackendLogger.logWorkflowStep(
+    "info",
+    "backend",
+    "presign",
+    "PDF presign requested",
+    workflowId,
+    {
+      messageDigestPresent: !!request.messageDigestB64,
+      certPresent: !!request.signerCertPem,
+    },
+  );
+  logPAdES(entry);
 
   // TODO: Implement pre-signing
   const response: PresignResponse = {
@@ -105,12 +139,22 @@ router.post("/pdf/presign", (req, res) => {
 // Step 3: Finalize (assemble CMS and embed in PDF)
 router.post("/pdf/finalize", (req, res) => {
   const request = req.body as FinalizeRequest;
+  const workflowId = generateShortId();
 
-  logger.info("PDF finalize requested", {
-    byteRange: request.byteRange,
-    signaturePresent: !!request.signatureB64,
-    certPresent: !!request.signerCertPem,
-  });
+  const entry = padesBackendLogger.logWorkflowStep(
+    "info",
+    "backend",
+    "finalize",
+    "PDF finalize requested",
+    workflowId,
+    {
+      byteRange: request.byteRange,
+      signaturePresent: !!request.signatureB64,
+      certPresent: !!request.signerCertPem,
+      signatureAlgorithm: request.signatureAlgorithmOid,
+    },
+  );
+  logPAdES(entry);
 
   // TODO: Implement finalization
   const response: FinalizeResponse = {
@@ -129,10 +173,18 @@ router.post("/pdf/finalize", (req, res) => {
 // Verify signed PDF
 router.post("/pdf/verify", (req, res) => {
   const request = req.body as VerificationRequest;
+  const workflowId = generateShortId();
+  const pdfSize = Buffer.from(request.pdfBase64 || "", "base64").length;
 
-  logger.info("PDF verification requested", {
-    pdfSize: request.pdfBase64.length || 0,
-  });
+  const entry = padesBackendLogger.logWorkflowStep(
+    "info",
+    "backend",
+    "verify",
+    "PDF verification requested",
+    workflowId,
+    { pdfSize },
+  );
+  logPAdES(entry);
 
   // TODO: Implement verification
   const response: VerificationResponse = {
@@ -157,10 +209,18 @@ router.post("/pdf/verify", (req, res) => {
 // Mock HSM signing endpoint (for development)
 router.post("/mock/sign", (req, res) => {
   const { toBeSignedB64 } = req.body as { toBeSignedB64: string };
+  const workflowId = generateShortId();
 
-  logger.info("Mock HSM signing requested", {
-    dataSize: toBeSignedB64.length || 0,
-  });
+  const entry = padesBackendLogger.createLogEntry(
+    "info",
+    "mock-hsm",
+    "Mock HSM signing requested",
+    {
+      workflowId,
+      dataSize: toBeSignedB64.length || 0,
+    },
+  );
+  logPAdES(entry);
 
   // TODO: Implement mock HSM
   const response: MockSignResponse = {
@@ -180,7 +240,15 @@ router.post("/mock/sign", (req, res) => {
 
 // CPS card endpoints (for production)
 router.post("/cps/readers", (req, res) => {
-  logger.info("CPS readers list requested");
+  const workflowId = generateShortId();
+
+  const entry = padesBackendLogger.logCPSOperation(
+    "info",
+    "CPS readers list requested",
+    workflowId,
+    undefined,
+  );
+  logPAdES(entry);
 
   // TODO: Implement CPS reader detection
   res.status(501).json({
@@ -194,7 +262,15 @@ router.post("/cps/readers", (req, res) => {
 });
 
 router.post("/cps/sign", (req, res) => {
-  logger.info("CPS signing requested");
+  const workflowId = generateShortId();
+
+  const entry = padesBackendLogger.logCPSOperation(
+    "info",
+    "CPS signing requested",
+    workflowId,
+    undefined,
+  );
+  logPAdES(entry);
 
   // TODO: Implement CPS signing
   res.status(501).json({

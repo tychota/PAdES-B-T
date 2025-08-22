@@ -7,6 +7,7 @@ export * from "./types/verification";
 export * from "./types/cps";
 export * from "./constants";
 export * from "./utils";
+export * from "./services/logger";
 
 // Version info
 export const SHARED_VERSION = "1.0.0";
