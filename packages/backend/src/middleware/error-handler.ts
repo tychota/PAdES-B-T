@@ -1,6 +1,7 @@
-import type { Request, Response, NextFunction } from "express";
 import { logger } from "../index";
+
 import type { BaseApiResponse } from "@pades-poc/shared";
+import type { Request, Response, NextFunction } from "express";
 
 export function errorHandler(err: Error, req: Request, res: Response, next: NextFunction): void {
   logger.error("Unhandled error", {
@@ -23,7 +24,8 @@ export function errorHandler(err: Error, req: Request, res: Response, next: Next
 
   // If response already sent, delegate to default Express error handler
   if (res.headersSent) {
-    return next(err);
+    next(err);
+    return;
   }
 
   res.status(500).json(response);

@@ -66,6 +66,9 @@ importers:
       '@types/express':
         specifier: ^5.0.3
         version: 5.0.3
+      '@types/express-serve-static-core':
+        specifier: 5.0.7
+        version: 5.0.7
       '@types/node':
         specifier: ^24.3.0
         version: 24.3.0
@@ -118,6 +121,9 @@ importers:
 
   packages/shared:
     devDependencies:
+      '@types/node':
+        specifier: ^24.3.0
+        version: 24.3.0
       typescript:
         specifier: ^5.9.2
         version: 5.9.2

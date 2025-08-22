@@ -12,12 +12,9 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "baseUrl": ".",
-    "paths": {
-      "@pades-poc/shared": ["./packages/shared/src/index.ts"]
-    }
+    "baseUrl": "."
   },
-  "include": [],
+  "include": ["./eslint.config.mjs"],
   "references": [
     {
       "path": "./packages/shared"

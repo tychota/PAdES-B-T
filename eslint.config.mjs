@@ -5,7 +5,7 @@ import prettier from "eslint-config-prettier/flat";
 
 export default tseslint.config(
   // global ignores (replacement for .eslintignore)
-  { ignores: ["**/dist/", "**/node_modules/", "**/*.js", "**/*.cjs"] },
+  { ignores: ["**/dist/", "**/node_modules/", "**/*.js", "**/*.cjs", "**/*.mjs"] },
 
   // base JS rules
   eslint.configs.recommended,
@@ -20,6 +20,8 @@ export default tseslint.config(
       parserOptions: {
         projectService: true,
         tsconfigRootDir: import.meta.dirname,
+        allowDefaultProject: true,
+        noWarnOnMultipleProjects: true,
       },
     },
 
@@ -34,11 +36,6 @@ export default tseslint.config(
     },
     rules: {
       // import hygiene (Prettier doesn’t do this)
-      "import/extensions": [
-        "error",
-        "ignorePackages",
-        { ts: "never", tsx: "never", js: "never", jsx: "never" },
-      ],
       "import/no-useless-path-segments": "error",
       "import/order": [
         "error",

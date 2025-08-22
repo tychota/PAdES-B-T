@@ -53,3 +53,6 @@ test-results/
 
 # ESLint
 .eslintcache
+
+# TypeScript
+*.tsbuildinfo
