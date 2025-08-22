@@ -69,6 +69,45 @@ import { APIResponse, LogEntry, createPAdESError } from "@pades-poc/shared";
 - No `any` types allowed (use `unknown` instead)
 - All functions must have explicit return types for public APIs
 
+### Type Safety Rules
+
+- **Never use `any`**: Use proper types, `unknown`, or create specific interfaces
+- **Handle undefined values**: Always check for undefined in template literals and object access
+- **Proper error handling**: Always type error objects and use Error instances for rejections
+- **Async/await**: Always handle promises properly, use `void` for fire-and-forget promises
+
+```typescript
+// ✅ Good
+const method = config.method?.toUpperCase() ?? "UNKNOWN";
+const url = config.url ?? "unknown";
+console.log(`[API] ${method} ${url}`);
+
+// Handle promises properly
+useEffect(() => {
+  void checkHealthStatus(); // Fire-and-forget
+}, []);
+
+// Or handle with proper async
+const handleClick = (): void => {
+  void performAsyncAction();
+};
+
+// Proper error handling
+catch (error: unknown) {
+  if (error instanceof Error) {
+    throw new Error(`Failed: ${error.message}`);
+  }
+  throw new Error("Unknown error occurred");
+}
+
+// ❌ Bad
+console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`); // Undefined in template
+useEffect(async () => { ... }, []); // Anti-pattern
+onClick={async () => { ... }} // Returns promise instead of void
+throw error; // Non-Error rejection
+const data: any = response.data; // Using any
+```
+
 ### Naming Conventions
 
 - **Constants**: `UPPER_SNAKE_CASE`
@@ -87,6 +126,65 @@ type ResponseData = { ... };
 const api_endpoint = 'https://api.example.com';
 const UserService = new UserService();
 interface userProfile { ... }
+```
+
+## Testing Standards
+
+### Mock Implementation
+
+- Always properly type mocks with interfaces
+- Use `vi.mocked()` for typed mocks
+- Create mock interfaces that match the real implementation
+
+```typescript
+// ✅ Good
+interface MockApiClientInstance {
+  checkHealth: ReturnType<typeof vi.fn>;
+  generatePDF: ReturnType<typeof vi.fn>;
+}
+
+const mockApiClient: MockApiClientInstance = {
+  checkHealth: vi.fn(),
+  generatePDF: vi.fn(),
+};
+
+MockedApiClient.mockImplementation(() => mockApiClient as unknown as ApiClient);
+
+// Use satisfies for type-safe responses
+mockApiClient.checkHealth.mockResolvedValue({
+  success: true,
+  status: "OK",
+} satisfies HealthResponse);
+
+// ❌ Bad
+const mockApiClient = {
+  checkHealth: vi.fn().mockResolvedValue({ ... } as any),
+};
+MockedApiClient.mockImplementation(() => mockApiClient as any);
+```
+
+### Test File Requirements
+
+- All test files must have corresponding setup files if using globals
+- Tests must handle async operations properly
+- Mock all external dependencies
+
+### Test File Naming
+
+- Unit tests: `*.test.ts`
+- Integration tests: `*.spec.ts`
+- Test utilities: `test-utils.ts`
+
+### Test Organization
+
+```typescript
+describe('ServiceName', () => {
+  describe('methodName', () => {
+    it('should handle success case', () => { ... });
+    it('should handle error case', () => { ... });
+    it('should validate inputs', () => { ... });
+  });
+});
 ```
 
 ## Code Organization
@@ -119,9 +217,27 @@ throw createPAdESError(ERROR_CODES.PDF_INVALID, "PDF file is corrupted", {
 throw new Error("Bad PDF");
 ```
 
-## Linting and Formatting
+## Quality Assurance
 
-### ESLint
+### Pre-commit Requirements
+
+Before committing code, always run:
+
+```bash
+# Type checking (must pass)
+pnpm type-check
+
+# Linting (must pass)
+pnpm lint:check
+
+# All tests (must pass)
+pnpm test
+
+# Build check (must pass)
+pnpm build
+```
+
+### Linting and Formatting
 
 Run ESLint to check and fix code issues:
 
@@ -165,26 +281,7 @@ Consider using tools like `husky` and `lint-staged` for pre-commit validation:
 - Implement proper loading and error states
 - Use consistent component patterns
 - Handle async operations properly
-
-## Testing Standards
-
-### Test File Naming
-
-- Unit tests: `*.test.ts`
-- Integration tests: `*.spec.ts`
-- Test utilities: `test-utils.ts`
-
-### Test Organization
-
-```typescript
-describe('ServiceName', () => {
-  describe('methodName', () => {
-    it('should handle success case', () => { ... });
-    it('should handle error case', () => { ... });
-    it('should validate inputs', () => { ... });
-  });
-});
-```
+- Always create test setup files when using testing globals
 
 ## Documentation Standards
 
@@ -214,3 +311,14 @@ Each package should have a README with:
 - Usage examples
 - API documentation
 - Contributing guidelines
+
+## Common Anti-Patterns to Avoid
+
+1. **Using `any` type**: Always use proper types or `unknown`
+2. **Undefined template expressions**: Check for undefined values
+3. **Async useEffect**: Never make useEffect callback async
+4. **Promise-returning event handlers**: Event handlers should return void
+5. **Non-Error rejections**: Always reject with Error instances
+6. **Untyped mocks**: Always properly type test mocks
+7. **Missing test setup**: Create setup files for test globals
+8. **Floating promises**: Always handle promises with void, catch, or await

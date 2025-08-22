@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosResponse } from "axios";
+import axios, { AxiosInstance, AxiosResponse, AxiosError } from "axios";
 
 import type {
   HealthResponse,
@@ -14,7 +14,12 @@ import type {
   GenerateDemoPDFResponse,
   MockSignResponse,
   BaseApiResponse,
+  PAdESError,
 } from "@pades-poc/shared";
+
+interface ApiErrorResponse {
+  error: PAdESError;
+}
 
 export class ApiClient {
   private client: AxiosInstance;
@@ -31,26 +36,33 @@ export class ApiClient {
     // Request interceptor for logging
     this.client.interceptors.request.use(
       (config) => {
-        console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
+        const method = config.method?.toUpperCase() ?? "UNKNOWN";
+        const url = config.url ?? "unknown";
+        console.log(`[API] ${method} ${url}`);
         return config;
       },
-      (error) => {
+      (error: unknown) => {
         console.error("[API] Request error:", error);
-        return Promise.reject(error);
+        return Promise.reject(new Error("Request configuration failed"));
       },
     );
 
     // Response interceptor for error handling
     this.client.interceptors.response.use(
       (response) => response,
-      (error) => {
-        if (error.response?.data?.error) {
-          const apiError = error.response.data.error;
+      (error: unknown) => {
+        if (this.isAxiosError(error) && error.response?.data) {
+          const responseData = error.response.data as ApiErrorResponse;
+          const apiError = responseData.error;
           throw new Error(`[${apiError.code}] ${apiError.message}`);
         }
-        throw error;
+        throw new Error("API request failed");
       },
     );
+  }
+
+  private isAxiosError(error: unknown): error is AxiosError {
+    return axios.isAxiosError(error);
   }
 
   // Health check
@@ -118,7 +130,7 @@ export class ApiClient {
     return response.data;
   }
 
-  async signWithCPS(data: unknown): Promise<BaseApiResponse> {
+  async signWithCPS(data: Record<string, unknown>): Promise<BaseApiResponse> {
     const response: AxiosResponse<BaseApiResponse> = await this.client.post("/cps/sign", data);
     return response.data;
   }

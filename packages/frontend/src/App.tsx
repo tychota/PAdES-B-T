@@ -12,7 +12,7 @@ function App(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    checkHealthStatus();
+    void checkHealthStatus();
   }, []);
 
   const checkHealthStatus = async (): Promise<void> => {
@@ -22,10 +22,15 @@ function App(): JSX.Element {
       const response = await apiClient.checkHealth();
       setHealthStatus(response);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to connect to backend");
+      const errorMessage = err instanceof Error ? err.message : "Failed to connect to backend";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRetryConnection = (): void => {
+    void checkHealthStatus();
   };
 
   return (
@@ -42,7 +47,7 @@ function App(): JSX.Element {
           {error && (
             <div className="error">
               <p>❌ Connection failed: {error}</p>
-              <button onClick={checkHealthStatus} type="button">
+              <button onClick={handleRetryConnection} type="button">
                 Retry Connection
               </button>
             </div>
