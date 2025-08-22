@@ -1,19 +1,16 @@
 packages:
   - packages/*
 
-catalog:
-  '@types/node': ^24.3.0
-  eslint: ^9.33.0
-  typescript: ^5.9.2
-  vitest: ^3.2.4
-
 link-workspace-packages: deep
 
 onlyBuiltDependencies:
   - esbuild
+  - unrs-resolver
 
 prefer-workspace-packages: true
 
 save-workspace-protocol: rolling
 
 shared-workspace-lockfile: true
+
+strictPeerDependencies: false

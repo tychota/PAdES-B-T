@@ -50,3 +50,6 @@ certs/
 
 # Test outputs
 test-results/
+
+# ESLint
+.eslintcache

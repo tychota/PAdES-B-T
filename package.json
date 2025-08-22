@@ -9,7 +9,10 @@
     "test": "pnpm -r test",
     "test:coverage": "pnpm -r test:coverage",
     "clean": "pnpm -r clean",
-    "lint": "eslint packages/*/src --ext .ts,.tsx",
+    "lint": "eslint packages/*/src --ext .ts,.tsx --fix",
+    "lint:check": "eslint packages/*/src --ext .ts,.tsx",
+    "format:check": "prettier --check .",
+    "type-check": "tsc --noEmit",
     "install:all": "pnpm install",
     "dev:backend": "pnpm --filter @pades-poc/backend dev",
     "dev:frontend": "pnpm --filter @pades-poc/frontend dev",
@@ -17,11 +20,17 @@
     "build:frontend": "pnpm --filter @pades-poc/frontend build"
   },
   "devDependencies": {
+    "@eslint/js": "^9.33.0",
     "@typescript-eslint/eslint-plugin": "^8.40.0",
     "@typescript-eslint/parser": "^8.40.0",
     "concurrently": "^9.2.0",
-    "eslint": "catalog:",
-    "typescript": "^5.9.2"
+    "eslint": "^9.33.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-import": "^2.32.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.40.0"
   },
   "keywords": [
     "pades",
