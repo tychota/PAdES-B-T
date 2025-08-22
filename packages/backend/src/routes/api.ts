@@ -2,6 +2,7 @@ import { generateShortId } from "@pades-poc/shared";
 import { Router } from "express";
 
 import { padesBackendLogger, logPAdES } from "../index";
+import { PDFService } from "../services/pdf-service";
 
 import type {
   HealthResponse,
@@ -19,6 +20,9 @@ import type {
 } from "@pades-poc/shared";
 
 export const router = Router();
+
+// Initialize PDF service
+const pdfService = new PDFService();
 
 // Health check endpoint
 router.get("/health", (req, res) => {
@@ -40,7 +44,7 @@ router.get("/health", (req, res) => {
 });
 
 // Generate demo PDF
-router.post("/pdf/generate", (req, res) => {
+router.post("/pdf/generate", async (req, res) => {
   const request = req.body as GenerateDemoPDFRequest;
   const workflowId = generateShortId();
 
@@ -54,22 +58,56 @@ router.post("/pdf/generate", (req, res) => {
   );
   logPAdES(entry);
 
-  // TODO: Implement PDF generation
-  const response: GenerateDemoPDFResponse = {
-    success: false,
-    error: {
-      code: "NOT_IMPLEMENTED",
-      message: "Demo PDF generation not yet implemented",
-      timestamp: new Date().toISOString(),
-    },
-    pdfBase64: "",
-  };
+  try {
+    const result = await pdfService.generateDemoPDF(request.config);
 
-  res.status(501).json(response);
+    const successEntry = padesBackendLogger.logWorkflowStep(
+      "success",
+      "backend",
+      "prepare",
+      "Demo PDF generated successfully",
+      workflowId,
+      {
+        pdfSize: result.metadata.size,
+        pageCount: result.metadata.pageCount,
+      },
+    );
+    logPAdES(successEntry);
+
+    const response: GenerateDemoPDFResponse = {
+      success: true,
+      pdfBase64: result.pdfBase64,
+    };
+
+    res.json(response);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    const errorEntry = padesBackendLogger.logWorkflowStep(
+      "error",
+      "backend",
+      "prepare",
+      `Demo PDF generation failed: ${errorMessage}`,
+      workflowId,
+    );
+    logPAdES(errorEntry);
+
+    const response: GenerateDemoPDFResponse = {
+      success: false,
+      error: {
+        code: "PDF_GENERATION_FAILED",
+        message: errorMessage,
+        timestamp: new Date().toISOString(),
+      },
+      pdfBase64: "",
+    };
+
+    res.status(500).json(response);
+  }
 });
 
 // Step 1: Prepare PDF for signing
-router.post("/pdf/prepare", (req, res) => {
+router.post("/pdf/prepare", async (req, res) => {
   const request = req.body as PrepareRequest;
   const workflowId = generateShortId();
   const pdfSize = Buffer.from(request.pdfBase64 || "", "base64").length;
@@ -87,20 +125,56 @@ router.post("/pdf/prepare", (req, res) => {
   );
   logPAdES(entry);
 
-  // TODO: Implement PDF preparation
-  const response: PrepareResponse = {
-    success: false,
-    error: {
-      code: "NOT_IMPLEMENTED",
-      message: "PDF preparation not yet implemented",
-      timestamp: new Date().toISOString(),
-    },
-    preparedPdfBase64: "",
-    byteRange: [0, 0, 0, 0],
-    messageDigestB64: "",
-  };
+  try {
+    const result = await pdfService.preparePDF(request.pdfBase64, request.config);
 
-  res.status(501).json(response);
+    const successEntry = padesBackendLogger.logWorkflowStep(
+      "success",
+      "backend",
+      "prepare",
+      "PDF prepared successfully",
+      workflowId,
+      {
+        preparedSize: Buffer.from(result.preparedPdfBase64, "base64").length,
+        byteRange: result.byteRange,
+      },
+    );
+    logPAdES(successEntry);
+
+    const response: PrepareResponse = {
+      success: true,
+      preparedPdfBase64: result.preparedPdfBase64,
+      byteRange: result.byteRange,
+      messageDigestB64: result.messageDigestB64,
+    };
+
+    res.json(response);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    const errorEntry = padesBackendLogger.logWorkflowStep(
+      "error",
+      "backend",
+      "prepare",
+      `PDF preparation failed: ${errorMessage}`,
+      workflowId,
+    );
+    logPAdES(errorEntry);
+
+    const response: PrepareResponse = {
+      success: false,
+      error: {
+        code: "PDF_PREPARATION_FAILED",
+        message: errorMessage,
+        timestamp: new Date().toISOString(),
+      },
+      preparedPdfBase64: "",
+      byteRange: [0, 0, 0, 0],
+      messageDigestB64: "",
+    };
+
+    res.status(500).json(response);
+  }
 });
 
 // Step 2: Pre-sign (build signed attributes)

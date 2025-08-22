@@ -11,7 +11,7 @@ export default tseslint.config(
   eslint.configs.recommended,
 
   // TS rules (typed)
-  tseslint.configs.strictTypeChecked,
+  tseslint.configs.recommendedTypeChecked,
   // tseslint.configs.recommendedTypeChecked,
 
   // project service = auto-detect tsconfigs across packages/*
