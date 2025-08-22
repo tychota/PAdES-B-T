@@ -8,6 +8,8 @@ import { errorHandler } from "./middleware/error-handler";
 import { requestLogger } from "./middleware/request-logger";
 import { router as apiRouter } from "./routes/api";
 
+import type { LogEntry } from "@pades-poc/shared";
+
 // Load environment variables
 dotenv.config();
 
@@ -23,10 +25,15 @@ export const logger = winston.createLogger({
     winston.format.printf((info) => {
       // If it's a PAdES log entry, use our custom formatter
       if (info.padesEntry) {
-        return padesLogger.formatLogEntry(info.padesEntry as any);
+        const entry = info.padesEntry as LogEntry;
+        return padesLogger.formatLogEntry(entry);
       }
       // Otherwise use default formatting
-      return `${info.timestamp} [${info.level.toUpperCase()}] ${info.message}`;
+      const timestamp =
+        typeof info.timestamp === "string" ? info.timestamp : new Date().toISOString();
+      const level = typeof info.level === "string" ? info.level.toUpperCase() : "INFO";
+      const message = typeof info.message === "string" ? info.message : "Unknown message";
+      return `${timestamp} [${level}] ${message}`;
     }),
   ),
   transports: [
@@ -47,16 +54,29 @@ export const logger = winston.createLogger({
   ],
 });
 
+const getLogLevel = (level: string | undefined): LogEntry["level"] => {
+  switch (level) {
+    case "debug":
+    case "info":
+    case "success":
+    case "warning":
+    case "error":
+      return level;
+    default:
+      return "info";
+  }
+};
+
 // Initialize PAdES logger with Winston integration
 export const padesBackendLogger = new PAdESLogger({
-  level: (process.env.LOG_LEVEL as any) || "info",
+  level: getLogLevel(process.env.LOG_LEVEL),
   includeTimestamp: true,
   includeSource: true,
   formatJson: process.env.NODE_ENV === "production",
 });
 
 // Custom logging function that integrates with Winston
-export function logPAdES(entry: any): void {
+export function logPAdES(entry: LogEntry): void {
   logger.log(entry.level, entry.message, { padesEntry: entry });
 }
 
