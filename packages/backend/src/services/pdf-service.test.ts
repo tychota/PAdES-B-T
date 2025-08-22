@@ -71,6 +71,12 @@ describe("PDFService", () => {
       expect(length1).toBeGreaterThan(0);
       expect(start2).toBeGreaterThan(length1);
       expect(length2).toBeGreaterThan(0);
+
+      // Verify the prepared PDF contains signature placeholder
+      const preparedBuffer = Buffer.from(prepareResult.preparedPdfBase64, "base64");
+      const pdfContent = preparedBuffer.toString("latin1");
+      expect(pdfContent).toContain("/SubFilter /ETSI.CAdES.detached");
+      expect(pdfContent).toContain("/Contents");
     });
 
     it("should include signature configuration in prepared PDF", async () => {
@@ -109,6 +115,53 @@ describe("PDFService", () => {
         hasExistingSignatures: false,
         existingSignatureCount: 0,
       });
+    });
+
+    it("should detect existing signatures", async () => {
+      // First generate and prepare a PDF (which adds a signature placeholder)
+      const demoResult = await pdfService.generateDemoPDF();
+      const prepareResult = await pdfService.preparePDF(demoResult.pdfBase64);
+
+      const metadata = await pdfService.getPDFMetadata(prepareResult.preparedPdfBase64);
+
+      expect(metadata.hasExistingSignatures).toBe(true);
+      expect(metadata.existingSignatureCount).toBe(1);
+    });
+  });
+
+  describe("embedCmsIntoPdf", () => {
+    it("should embed CMS data into PDF placeholder", async () => {
+      // Generate and prepare PDF
+      const demoResult = await pdfService.generateDemoPDF();
+      const prepareResult = await pdfService.preparePDF(demoResult.pdfBase64);
+
+      // Create mock CMS data (just some bytes for testing)
+      const mockCmsData = Buffer.from("mock cms data for testing");
+      const preparedBytes = Buffer.from(prepareResult.preparedPdfBase64, "base64");
+
+      // Embed the CMS
+      const signedPdf = pdfService.embedCmsIntoPdf(
+        new Uint8Array(preparedBytes),
+        new Uint8Array(mockCmsData),
+      );
+
+      // Verify the CMS was embedded
+      const signedPdfString = Buffer.from(signedPdf).toString("latin1");
+      const mockCmsHex = mockCmsData.toString("hex").toUpperCase();
+      expect(signedPdfString).toContain(mockCmsHex);
+    });
+
+    it("should fail if CMS is too large for placeholder", async () => {
+      const demoResult = await pdfService.generateDemoPDF();
+      const prepareResult = await pdfService.preparePDF(demoResult.pdfBase64);
+
+      // Create CMS data that's too large (larger than 32KB placeholder)
+      const largeCmsData = Buffer.alloc(40000, 0xff);
+      const preparedBytes = Buffer.from(prepareResult.preparedPdfBase64, "base64");
+
+      expect(() => {
+        pdfService.embedCmsIntoPdf(new Uint8Array(preparedBytes), new Uint8Array(largeCmsData));
+      }).toThrow("CMS");
     });
   });
 });
