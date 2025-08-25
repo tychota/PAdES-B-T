@@ -2,8 +2,10 @@ import { generateShortId } from "@pades-poc/shared";
 import { Router } from "express";
 
 import { padesBackendLogger, logPAdES } from "../logger";
+import { fromBase64, toBase64 } from "../services/crypto-utils";
 import { MockHSMService } from "../services/mock-hsm-service";
 import { PDFService } from "../services/pdf-service";
+import { SignatureService } from "../services/signature-service";
 
 import type {
   HealthResponse,
@@ -18,6 +20,7 @@ import type {
   GenerateDemoPDFRequest,
   GenerateDemoPDFResponse,
   MockSignResponse,
+  LogEntry,
 } from "@pades-poc/shared";
 
 export const router = Router();
@@ -25,6 +28,7 @@ export const router = Router();
 // Initialize services
 const pdfService = new PDFService();
 const mockHSM = new MockHSMService();
+const signatureService = new SignatureService();
 
 // Initialize Mock HSM in background
 void mockHSM.ready
@@ -221,19 +225,99 @@ router.post("/pdf/presign", (req, res) => {
   );
   logPAdES(entry);
 
-  // TODO: Implement pre-signing
-  const response: PresignResponse = {
-    success: false,
-    error: {
-      code: "NOT_IMPLEMENTED",
-      message: "PDF pre-signing not yet implemented",
-      timestamp: new Date().toISOString(),
-    },
-    toBeSignedB64: "",
-    signedAttrsDerB64: "",
-  };
+  try {
+    // Validate required parameters
+    if (!request.messageDigestB64) {
+      const response: PresignResponse = {
+        success: false,
+        error: {
+          code: "MISSING_PARAMETER",
+          message: "messageDigestB64 is required",
+          timestamp: new Date().toISOString(),
+        },
+        toBeSignedB64: "",
+        signedAttrsDerB64: "",
+      };
+      res.status(400).json(response);
+      return;
+    }
 
-  res.status(501).json(response);
+    if (!request.signerCertPem) {
+      const response: PresignResponse = {
+        success: false,
+        error: {
+          code: "MISSING_PARAMETER",
+          message: "signerCertPem is required for PAdES presigning",
+          timestamp: new Date().toISOString(),
+        },
+        toBeSignedB64: "",
+        signedAttrsDerB64: "",
+      };
+      res.status(400).json(response);
+      return;
+    }
+
+    // Decode message digest
+    const messageDigest = fromBase64(request.messageDigestB64);
+
+    // Build signed attributes
+    const logs: LogEntry[] = [];
+    const result = signatureService.buildSignedAttributes(
+      {
+        messageDigest,
+        signerCertPem: request.signerCertPem,
+      },
+      logs,
+    );
+
+    // Log any debug information from the service
+    logs.forEach((log) => logPAdES(log));
+
+    const successEntry = padesBackendLogger.logWorkflowStep(
+      "success",
+      "backend",
+      "presign",
+      "Signed attributes built successfully",
+      workflowId,
+      {
+        derSize: result.signedAttrsDer.length,
+        hashSize: result.toBeSignedHash.length,
+      },
+    );
+    logPAdES(successEntry);
+
+    const response: PresignResponse = {
+      success: true,
+      toBeSignedB64: toBase64(result.toBeSignedHash),
+      signedAttrsDerB64: toBase64(result.signedAttrsDer),
+    };
+
+    res.json(response);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    const errorEntry = padesBackendLogger.logWorkflowStep(
+      "error",
+      "backend",
+      "presign",
+      `PDF presigning failed: ${errorMessage}`,
+      workflowId,
+    );
+    logPAdES(errorEntry);
+
+    const response: PresignResponse = {
+      success: false,
+      error: {
+        code: "PRESIGN_FAILED",
+        message: errorMessage,
+        timestamp: new Date().toISOString(),
+      },
+      toBeSignedB64: "",
+      signedAttrsDerB64: "",
+    };
+
+    res.status(500).json(response);
+  }
 });
 
 // Step 3: Finalize (assemble CMS and embed in PDF)
