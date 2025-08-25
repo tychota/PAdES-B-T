@@ -3,7 +3,7 @@ import { join } from "path";
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.stubEnv("LOG_ENV", "error");
+vi.stubEnv("LOG_LEVEL", "error");
 
 import { MockHSMService } from "./mock-hsm-service";
 

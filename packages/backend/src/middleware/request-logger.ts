@@ -1,4 +1,4 @@
-import { logger } from "../index";
+import { logger } from "../logger";
 
 import type { Request, Response, NextFunction } from "express";
 
