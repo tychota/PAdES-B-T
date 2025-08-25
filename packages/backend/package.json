@@ -20,7 +20,10 @@
     "winston": "^3.11.0",
     "pdf-lib": "^1.17.1",
     "@pdf-lib/fontkit": "^1.1.1",
-    "@signpdf/placeholder-pdf-lib": "3.2.6"
+    "@signpdf/placeholder-pdf-lib": "3.2.6",
+    "asn1js": "^3.0.1",
+    "pkijs": "^3.2.5",
+    "pvutils": "^1.1.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

@@ -1,7 +1,8 @@
 import { generateShortId } from "@pades-poc/shared";
 import { Router } from "express";
 
-import { padesBackendLogger, logPAdES } from "../index";
+import { padesBackendLogger, logPAdES } from "../logger";
+import { MockHSMService } from "../services/mock-hsm-service";
 import { PDFService } from "../services/pdf-service";
 
 import type {
@@ -21,11 +22,35 @@ import type {
 
 export const router = Router();
 
-// Initialize PDF service
+// Initialize services
 const pdfService = new PDFService();
+const mockHSM = new MockHSMService();
+
+// Initialize Mock HSM in background
+void mockHSM.ready
+  .then(() => {
+    const entry = padesBackendLogger.createLogEntry(
+      "success",
+      "backend",
+      "Mock HSM service initialized and ready for use",
+    );
+    logPAdES(entry);
+  })
+  .catch((error) => {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const entry = padesBackendLogger.createLogEntry(
+      "error",
+      "backend",
+      `Mock HSM initialization failed: ${errorMessage}`,
+    );
+    logPAdES(entry);
+  });
 
 // Health check endpoint
 router.get("/health", (req, res) => {
+  // Check if Mock HSM is ready
+  const mockHSMReady = mockHSM.isInitialized();
+
   const response: HealthResponse = {
     success: true,
     status: "OK",
@@ -37,6 +62,7 @@ router.get("/health", (req, res) => {
   const entry = padesBackendLogger.createLogEntry("info", "backend", "Health check requested", {
     ip: req.ip,
     userAgent: req.get("User-Agent"),
+    mockHSMReady,
   });
   logPAdES(entry);
 
@@ -281,7 +307,7 @@ router.post("/pdf/verify", (req, res) => {
 });
 
 // Mock HSM signing endpoint (for development)
-router.post("/mock/sign", (req, res) => {
+router.post("/mock/sign", async (req, res) => {
   const { toBeSignedB64 } = req.body as { toBeSignedB64: string };
   const workflowId = generateShortId();
 
@@ -291,25 +317,100 @@ router.post("/mock/sign", (req, res) => {
     "Mock HSM signing requested",
     {
       workflowId,
-      dataSize: toBeSignedB64.length || 0,
+      dataSize: toBeSignedB64?.length || 0,
     },
   );
   logPAdES(entry);
 
-  // TODO: Implement mock HSM
-  const response: MockSignResponse = {
-    success: false,
-    error: {
-      code: "NOT_IMPLEMENTED",
-      message: "Mock HSM signing not yet implemented",
-      timestamp: new Date().toISOString(),
-    },
-    signatureB64: "",
-    signerCertPem: "",
-    signatureAlgorithmOid: "",
-  };
+  try {
+    if (!toBeSignedB64) {
+      const response: MockSignResponse = {
+        success: false,
+        error: {
+          code: "INVALID_REQUEST",
+          message: "toBeSignedB64 parameter is required",
+          timestamp: new Date().toISOString(),
+        },
+        signatureB64: "",
+        signerCertPem: "",
+        signatureAlgorithmOid: "",
+      };
+      res.status(400).json(response);
+      return;
+    }
 
-  res.status(501).json(response);
+    // Ensure Mock HSM is ready
+    if (!mockHSM.isInitialized()) {
+      // Try to wait a bit for initialization
+      await mockHSM.ready;
+    }
+
+    if (!mockHSM.isInitialized()) {
+      const response: MockSignResponse = {
+        success: false,
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "Mock HSM not properly initialized",
+          timestamp: new Date().toISOString(),
+        },
+        signatureB64: "",
+        signerCertPem: "",
+        signatureAlgorithmOid: "",
+      };
+      res.status(500).json(response);
+      return;
+    }
+
+    const signatureB64 = await mockHSM.signBase64(toBeSignedB64);
+    const signerCertPem = mockHSM.getSignerCertificatePem();
+    const certificateChainPem = mockHSM.getCertificateChainPem(false); // Don't include root in response
+
+    const successEntry = padesBackendLogger.createLogEntry(
+      "success",
+      "mock-hsm",
+      "Data signed successfully with mock HSM",
+      {
+        workflowId,
+        signatureSize: Buffer.from(signatureB64, "base64").length,
+        algorithm: "RSA-SHA256",
+      },
+    );
+    logPAdES(successEntry);
+
+    const response: MockSignResponse = {
+      success: true,
+      signatureB64,
+      signerCertPem,
+      certificateChainPem,
+      signatureAlgorithmOid: "1.2.840.113549.1.1.11", // SHA256withRSA
+    };
+
+    res.json(response);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown signing error";
+
+    const errorEntry = padesBackendLogger.createLogEntry(
+      "error",
+      "mock-hsm",
+      `Mock HSM signing failed: ${errorMessage}`,
+      { workflowId },
+    );
+    logPAdES(errorEntry);
+
+    const response: MockSignResponse = {
+      success: false,
+      error: {
+        code: "SIGNING_FAILED",
+        message: errorMessage,
+        timestamp: new Date().toISOString(),
+      },
+      signatureB64: "",
+      signerCertPem: "",
+      signatureAlgorithmOid: "",
+    };
+
+    res.status(500).json(response);
+  }
 });
 
 // CPS card endpoints (for production)
