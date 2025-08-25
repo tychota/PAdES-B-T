@@ -2,6 +2,7 @@ import { generateShortId } from "@pades-poc/shared";
 import { Router } from "express";
 
 import { padesBackendLogger, logPAdES } from "../logger";
+import { CMSService } from "../services/cms-service";
 import { fromBase64, toBase64 } from "../services/crypto-utils";
 import { MockHSMService } from "../services/mock-hsm-service";
 import { PDFService } from "../services/pdf-service";
@@ -29,6 +30,7 @@ export const router = Router();
 const pdfService = new PDFService();
 const mockHSM = new MockHSMService();
 const signatureService = new SignatureService();
+const cmsService = new CMSService();
 
 // Initialize Mock HSM in background
 void mockHSM.ready
@@ -321,7 +323,7 @@ router.post("/pdf/presign", (req, res) => {
 });
 
 // Step 3: Finalize (assemble CMS and embed in PDF)
-router.post("/pdf/finalize", (req, res) => {
+router.post("/pdf/finalize", async (req, res) => {
   const request = req.body as FinalizeRequest;
   const workflowId = generateShortId();
 
@@ -340,18 +342,108 @@ router.post("/pdf/finalize", (req, res) => {
   );
   logPAdES(entry);
 
-  // TODO: Implement finalization
-  const response: FinalizeResponse = {
-    success: false,
-    error: {
-      code: "NOT_IMPLEMENTED",
-      message: "PDF finalization not yet implemented",
-      timestamp: new Date().toISOString(),
-    },
-    signedPdfBase64: "",
-  };
+  try {
+    // Validate required parameters
+    if (!request.preparedPdfBase64) {
+      const response: FinalizeResponse = {
+        success: false,
+        error: {
+          code: "MISSING_PARAMETER",
+          message: "preparedPdfBase64 is required",
+          timestamp: new Date().toISOString(),
+        },
+        signedPdfBase64: "",
+      };
+      res.status(400).json(response);
+      return;
+    }
 
-  res.status(501).json(response);
+    if (!request.signedAttrsDerB64 || !request.signatureB64 || !request.signerCertPem) {
+      const response: FinalizeResponse = {
+        success: false,
+        error: {
+          code: "MISSING_PARAMETER",
+          message: "signedAttrsDerB64, signatureB64, and signerCertPem are required",
+          timestamp: new Date().toISOString(),
+        },
+        signedPdfBase64: "",
+      };
+      res.status(400).json(response);
+      return;
+    }
+
+    // Decode parameters
+    const preparedPdfBytes = fromBase64(request.preparedPdfBase64);
+    const signedAttrsDer = fromBase64(request.signedAttrsDerB64);
+    const signature = fromBase64(request.signatureB64);
+
+    // Assemble CMS
+    const logs: LogEntry[] = [];
+    const cmsResult = await cmsService.assembleCMS(
+      {
+        signedAttrsDer,
+        signature,
+        signerCertPem: request.signerCertPem,
+        certificateChainPem: request.certificateChainPem,
+        signatureAlgorithmOid: request.signatureAlgorithmOid,
+        withTimestamp: true,
+      },
+      logs,
+    );
+
+    // Log CMS assembly information
+    logs.forEach((log) => logPAdES(log));
+
+    // Embed CMS into PDF
+    const signedPdfBytes = pdfService.embedCmsIntoPdf(
+      new Uint8Array(preparedPdfBytes),
+      new Uint8Array(cmsResult.cmsDer),
+    );
+
+    const successEntry = padesBackendLogger.logWorkflowStep(
+      "success",
+      "backend",
+      "finalize",
+      "PDF finalized successfully",
+      workflowId,
+      {
+        finalPdfSize: signedPdfBytes.length,
+        cmsSize: cmsResult.cmsDer.length,
+        estimatedCmsSize: cmsResult.estimatedSize,
+      },
+    );
+    logPAdES(successEntry);
+
+    const response: FinalizeResponse = {
+      success: true,
+      signedPdfBase64: toBase64(Buffer.from(signedPdfBytes)),
+    };
+
+    res.json(response);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    const errorEntry = padesBackendLogger.logWorkflowStep(
+      "error",
+      "backend",
+      "finalize",
+      `PDF finalization failed: ${errorMessage}`,
+      workflowId,
+    );
+    logPAdES(errorEntry);
+
+    const response: FinalizeResponse = {
+      success: false,
+      error: {
+        code: "FINALIZATION_FAILED",
+        message: errorMessage,
+        timestamp: new Date().toISOString(),
+      },
+      signedPdfBase64: "",
+    };
+
+    res.status(500).json(response);
+  }
 });
 
 // Verify signed PDF
