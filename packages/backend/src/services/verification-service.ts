@@ -16,6 +16,8 @@ import {
   SignedData,
   Certificate,
   IssuerAndSerialNumber,
+  TSTInfo,
+  type SignedDataVerifyResult,
 } from "pkijs";
 
 // ── internal services
@@ -36,7 +38,18 @@ setEngine(
   }),
 );
 
-export type SignatureLevel = "B-B" | "B-T" | "Unknown";
+export type SignatureLevel = "B-B" | "B-T" | "UNKNOWN";
+
+export interface TimestampValidationResult {
+  isValid: boolean;
+  timestampTime?: string;
+  tsaName?: string;
+  accuracy?: string;
+  serialNumber?: string;
+  messageImprintMatches: boolean;
+  tsaSignatureValid: boolean;
+  reasons: string[];
+}
 
 export interface VerificationResult {
   isCryptographicallyValid: boolean;
@@ -62,6 +75,8 @@ export interface VerificationResult {
     };
     reasons: string[];
   };
+  // Enhanced timestamp information
+  timestampValidation?: TimestampValidationResult;
 }
 
 export interface VerificationParams {
@@ -122,7 +137,7 @@ export class VerificationService {
         isCryptographicallyValid: false,
         isPAdESCompliant: false,
         isTimestamped: false,
-        signatureLevel: "Unknown",
+        signatureLevel: "UNKNOWN",
         reasons: ["No CMS signature found"],
         logs,
       };
@@ -136,7 +151,7 @@ export class VerificationService {
         isCryptographicallyValid: false,
         isPAdESCompliant: false,
         isTimestamped: false,
-        signatureLevel: "Unknown",
+        signatureLevel: "UNKNOWN",
         reasons: ["CMS parsing failed"],
         logs,
       };
@@ -153,13 +168,13 @@ export class VerificationService {
         isCryptographicallyValid: false,
         isPAdESCompliant: false,
         isTimestamped: false,
-        signatureLevel: "Unknown",
+        signatureLevel: "UNKNOWN",
         reasons: ["Signer certificate not found in CMS"],
         logs,
       };
     }
 
-    // 1) Certificate Chain Validation (NEW)
+    // 1) Certificate Chain Validation
     let certificateChain: VerificationResult["certificateChain"];
     const certificates = Array.isArray(signedData.certificates)
       ? signedData.certificates.filter((cert): cert is Certificate => cert instanceof Certificate)
@@ -246,15 +261,63 @@ export class VerificationService {
         level: "warning",
         source: "backend",
         message: `Manual signature verification failed`,
-        context: { error: e instanceof Error ? e.message : String(e) },
+        context: {
+          error: e && typeof e === "object" && "message" in e ? (e as Error).message : String(e),
+        },
       });
     }
 
-    // 4) Timestamp presence (B-T detection). Full RFC3161 validation later.
+    // 4) Timestamp verification (RFC 3161)
     const tsAttr = signerInfo.unsignedAttrs?.attributes.find(
       (a) => a.type === "1.2.840.113549.1.9.16.2.14", // id-aa-signatureTimeStampToken
     );
-    const isTimestamped = Boolean(tsAttr);
+
+    let isTimestamped = false;
+    let timestampValidation: TimestampValidationResult | undefined;
+    let timestampTime: string | undefined;
+
+    if (tsAttr && tsAttr.values[0]) {
+      isTimestamped = true;
+      const signatureBytes = new Uint8Array(signerInfo.signature.valueBlock.valueHexView);
+      const tsValue = tsAttr.values[0] as unknown;
+      let tokenSchema: asn1js.BaseBlock | undefined;
+
+      if (tsValue instanceof asn1js.OctetString) {
+        // Parse the DER-encoded content inside the OctetString
+        const parsed = asn1js.fromBER(tsValue.valueBlock.valueHex);
+        if (parsed.offset !== -1) {
+          tokenSchema = parsed.result;
+        }
+      } else if (tsValue instanceof asn1js.Sequence) {
+        tokenSchema = tsValue;
+      } else if (tsValue instanceof ArrayBuffer || ArrayBuffer.isView(tsValue)) {
+        // If it's a buffer, parse it
+        const parsed = asn1js.fromBER(tsValue as ArrayBuffer);
+        if (parsed.offset !== -1) {
+          tokenSchema = parsed.result;
+        }
+      }
+
+      if (tokenSchema) {
+        timestampValidation = await this.verifyTimestampToken(tokenSchema, signatureBytes, logs);
+        if (!timestampValidation.isValid) {
+          reasons.push(...timestampValidation.reasons);
+        }
+        timestampTime = timestampValidation.timestampTime;
+      } else {
+        reasons.push("Timestamp attribute value is not a valid ASN.1 structure");
+        timestampValidation = {
+          isValid: false,
+          timestampTime: undefined,
+          tsaName: undefined,
+          accuracy: undefined,
+          serialNumber: undefined,
+          messageImprintMatches: false,
+          tsaSignatureValid: false,
+          reasons: ["Timestamp attribute value is not a valid ASN.1 structure"],
+        };
+      }
+    }
 
     // 5) Minimal PAdES-B-B compliance: detached CMS with contentType + messageDigest
     const hasContentType = Boolean(
@@ -262,14 +325,20 @@ export class VerificationService {
         (a) => a.type === "1.2.840.113549.1.9.3", // contentType
       ),
     );
+
+    const timestampValid = !isTimestamped || (timestampValidation?.isValid ?? false);
     const isPAdESCompliant =
-      signatureVerified && hasContentType && digestMatches && (certificateChain?.isValid ?? false);
+      signatureVerified &&
+      hasContentType &&
+      digestMatches &&
+      (certificateChain?.isValid ?? false) &&
+      timestampValid;
 
     const signatureLevel: SignatureLevel = signatureVerified
       ? isTimestamped
         ? "B-T"
         : "B-B"
-      : "Unknown";
+      : "UNKNOWN";
 
     const signerCN = this.getSubjectCN(signerCert);
 
@@ -283,6 +352,7 @@ export class VerificationService {
         signatureVerified,
         digestMatches,
         chainValid: certificateChain?.isValid ?? false,
+        timestampValid,
         signerCN,
       },
     });
@@ -293,9 +363,188 @@ export class VerificationService {
       isTimestamped,
       signatureLevel,
       signerCN,
+      timestampTime,
       reasons,
       certificateChain,
+      timestampValidation,
       logs,
+    };
+  }
+
+  /**
+   * Verify RFC 3161 timestamp token
+   */
+  private async verifyTimestampToken(
+    tokenValue: asn1js.BaseBlock,
+    signatureBytes: Uint8Array,
+    logs: LogEntry[],
+  ): Promise<TimestampValidationResult> {
+    const reasons: string[] = [];
+    let isValid = true;
+    let timestampTime: string | undefined;
+    let tsaName: string | undefined;
+    let accuracy: string | undefined;
+    let serialNumber: string | undefined;
+    let messageImprintMatches = false;
+    let tsaSignatureValid = false;
+
+    logs.push({
+      timestamp: new Date().toISOString(),
+      level: "info",
+      source: "backend",
+      message: "Starting timestamp token verification",
+    });
+
+    try {
+      // Parse TimeStampToken (ContentInfo containing SignedData)
+      let tokenSchema: asn1js.BaseBlock;
+      if (tokenValue instanceof asn1js.Sequence) {
+        tokenSchema = tokenValue;
+      } else if (
+        typeof tokenValue === "object" &&
+        tokenValue !== null &&
+        "toSchema" in tokenValue &&
+        typeof (tokenValue as { toSchema?: unknown }).toSchema === "function"
+      ) {
+        tokenSchema = (tokenValue as { toSchema: () => asn1js.BaseBlock }).toSchema();
+      } else {
+        throw new Error("Timestamp token value is not a valid ASN.1 structure");
+      }
+      const timestampToken = new ContentInfo({ schema: tokenSchema });
+      const timestampSignedData = new SignedData({ schema: timestampToken.content });
+
+      // Extract TSTInfo from encapsulated content
+      const encapContent = timestampSignedData.encapContentInfo.eContent;
+      if (!encapContent) {
+        reasons.push("Timestamp token missing TSTInfo");
+        return { isValid: false, messageImprintMatches: false, tsaSignatureValid: false, reasons };
+      }
+
+      const tstInfoAsn1 = asn1js.fromBER(encapContent.valueBlock.valueHex);
+      if (tstInfoAsn1.offset === -1) {
+        reasons.push("Invalid TSTInfo structure");
+        return { isValid: false, messageImprintMatches: false, tsaSignatureValid: false, reasons };
+      }
+
+      const tstInfo = new TSTInfo({ schema: tstInfoAsn1.result });
+
+      // Extract timestamp information
+      if (tstInfo.genTime) {
+        timestampTime = tstInfo.genTime.toISOString();
+      }
+
+      if (tstInfo.serialNumber) {
+        serialNumber = Buffer.from(tstInfo.serialNumber.valueBlock.valueHex).toString("hex");
+      }
+
+      if (tstInfo.accuracy) {
+        const secs = (tstInfo.accuracy.seconds ?? 0).toString();
+        const ms = tstInfo.accuracy.millis ?? 0;
+        const us = tstInfo.accuracy.micros ?? 0;
+        const parts: string[] = [];
+        if (secs !== "0") parts.push(`${secs}s`);
+        if (ms) parts.push(`${ms}ms`);
+        if (us) parts.push(`${us}µs`);
+        if (parts.length) accuracy = `±${parts.join(" ")}`;
+      }
+
+      // Verify messageImprint matches the signature
+      if (tstInfo.messageImprint) {
+        const messageImprint = tstInfo.messageImprint;
+        const hashAlgOid = messageImprint.hashAlgorithm.algorithmId;
+        const expectedHash = new Uint8Array(messageImprint.hashedMessage.valueBlock.valueHexView);
+
+        // Hash the signature bytes with the algorithm specified in messageImprint
+        const hashAlgorithm = oidToDigestName(hashAlgOid) ?? "SHA-256";
+        const computedHashAB = await nodeWebcrypto.subtle.digest(hashAlgorithm, signatureBytes);
+        const computedHash = new Uint8Array(computedHashAB);
+
+        messageImprintMatches = bytesEq(expectedHash, computedHash);
+
+        if (!messageImprintMatches) {
+          reasons.push("Timestamp messageImprint does not match signature");
+          isValid = false;
+        }
+      } else {
+        reasons.push("Timestamp token missing messageImprint");
+        isValid = false;
+      }
+
+      // Verify TSA signature on the timestamp using PKI.js high-level API
+      // NOTE: `SignedData.verify` is overloaded and can return boolean or a detailed result object.
+      // We handle both in a type-safe way.
+      try {
+        const verifyResult = (await timestampSignedData.verify({
+          signer: 0,
+          checkChain: false,
+        })) as boolean | SignedDataVerifyResult;
+
+        if (typeof verifyResult === "boolean") {
+          tsaSignatureValid = verifyResult;
+        } else {
+          tsaSignatureValid = !!verifyResult.signatureVerified;
+          // Prefer TSA cert from verify result (if present) to extract CN
+          if (
+            verifyResult.signerCertificate &&
+            verifyResult.signerCertificate instanceof Certificate
+          ) {
+            tsaName = this.getSubjectCN(verifyResult.signerCertificate);
+          }
+        }
+
+        if (!tsaSignatureValid) {
+          reasons.push("TSA signature verification failed");
+          isValid = false;
+        } else {
+          // If we didn't get a cert from the result (e.g., boolean path), try to infer it like before
+          if (!tsaName) {
+            const tsaSignerInfo = timestampSignedData.signerInfos[0];
+            const tsaSignerCert = this.findSignerCertificate(timestampSignedData, tsaSignerInfo);
+            if (tsaSignerCert) tsaName = this.getSubjectCN(tsaSignerCert);
+          }
+        }
+      } catch (e) {
+        const errorMsg = e instanceof Error ? e.message : "Unknown error";
+        reasons.push(`TSA signature verification error: ${errorMsg}`);
+        isValid = false;
+      }
+
+      logs.push({
+        timestamp: new Date().toISOString(),
+        level: isValid ? "success" : "warning",
+        source: "backend",
+        message: `Timestamp verification completed: ${isValid ? "VALID" : "INVALID"}`,
+        context: {
+          timestampTime,
+          tsaName,
+          messageImprintMatches,
+          tsaSignatureValid,
+          serialNumber,
+        },
+      });
+    } catch (e) {
+      const errorMsg =
+        e && typeof e === "object" && "message" in e ? (e as Error).message : String(e);
+      reasons.push(`Timestamp token parsing failed: ${errorMsg}`);
+      isValid = false;
+
+      logs.push({
+        timestamp: new Date().toISOString(),
+        level: "error",
+        source: "backend",
+        message: `Timestamp verification error: ${errorMsg}`,
+      });
+    }
+
+    return {
+      isValid,
+      timestampTime,
+      tsaName,
+      accuracy,
+      serialNumber,
+      messageImprintMatches,
+      tsaSignatureValid,
+      reasons,
     };
   }
 

@@ -1,12 +1,18 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { CMSService } from "./cms-service";
 import { MockHSMService } from "./mock-hsm-service";
 import { PDFService } from "./pdf-service";
 import { SignatureService } from "./signature-service";
+import { requestTimestamp } from "./timestamp-service";
 import { VerificationService } from "./verification-service";
 
 import type { PDFSigningConfig } from "@pades-poc/shared";
+
+// Mock timestamp service for controlled testing
+vi.mock("./timestamp-service", () => ({
+  requestTimestamp: vi.fn(),
+}));
 
 describe("VerificationService", () => {
   let mockHSM: MockHSMService;
@@ -72,9 +78,41 @@ describe("VerificationService", () => {
       expect(verificationResult.isTimestamped).toBe(false);
       expect(verificationResult.signatureLevel).toBe("B-B");
       expect(verificationResult.reasons).toHaveLength(0);
+      expect(verificationResult.timestampValidation).toBeUndefined();
     });
 
     it("should verify a valid PAdES-B-T signature with timestamp", async () => {
+      // Create a minimal fake TimeStampToken for testing
+      const { Sequence, Integer, OctetString, ObjectIdentifier } = await import("asn1js");
+
+      const fakeToken = new Sequence({
+        value: [
+          new ObjectIdentifier({ value: "1.2.840.113549.1.7.2" }), // signedData
+          new Sequence({
+            value: [
+              new Integer({ value: 1 }), // version
+              new Sequence({ value: [] }), // digestAlgorithms
+              new Sequence({
+                value: [
+                  new ObjectIdentifier({ value: "1.2.840.113549.1.7.1" }), // id-data
+                  new OctetString({ valueHex: new ArrayBuffer(0) }), // eContent (empty)
+                ],
+              }),
+              new Sequence({ value: [] }), // signerInfos
+            ],
+          }),
+        ],
+      });
+
+      // Mock requestTimestamp to return our fake token
+      vi.mocked(requestTimestamp).mockResolvedValueOnce({
+        timestampToken: fakeToken,
+        timestampTime: new Date("2024-01-01T00:00:00Z").toISOString(),
+        tsaUrl: "https://test-tsa.example.com",
+        accuracy: "±1s",
+        serialNumber: "01",
+      });
+
       const config: PDFSigningConfig = {
         signerName: "Dr. Test Signer",
         reason: "Test signature with timestamp",
@@ -96,7 +134,7 @@ describe("VerificationService", () => {
       // Sign with mock HSM
       const signature = await mockHSM.signData(signedAttrsDer);
 
-      // Assemble CMS with timestamp attempt (will fall back to B-B if TSA fails)
+      // Assemble CMS with timestamp
       const cmsResult = await cmsService.assembleCMS({
         signedAttrsDer,
         signature,
@@ -115,9 +153,11 @@ describe("VerificationService", () => {
       const verificationResult = await verificationService.verify(Buffer.from(signedPdf));
 
       expect(verificationResult.isCryptographicallyValid).toBe(true);
-      expect(verificationResult.isPAdESCompliant).toBe(true);
-      expect(verificationResult.signatureLevel).toMatch(/^B-(B|T)$/);
-      expect(verificationResult.reasons).toHaveLength(0);
+      expect(verificationResult.isPAdESCompliant).toBe(false); // Will fail due to fake timestamp
+      expect(verificationResult.isTimestamped).toBe(true);
+      expect(verificationResult.signatureLevel).toBe("B-T");
+      expect(verificationResult.timestampValidation).toBeDefined();
+      expect(verificationResult.timestampValidation?.isValid).toBe(false); // Fake token won't validate
     });
 
     it("should detect modified PDF content", async () => {
@@ -185,6 +225,47 @@ describe("VerificationService", () => {
       expect(verificationResult.isCryptographicallyValid).toBe(false);
       expect(verificationResult.isPAdESCompliant).toBe(false);
       expect(verificationResult.reasons[0]).toContain("No CMS signature found");
+    });
+
+    it("should provide detailed timestamp validation information", async () => {
+      // This test verifies that timestamp validation results are properly structured
+      const config: PDFSigningConfig = { signerName: "Dr. Test" };
+      const demoResult = await pdfService.generateDemoPDF(config);
+      const prepareResult = await pdfService.preparePDF(demoResult.pdfBase64, config);
+
+      const messageDigest = Buffer.from(prepareResult.messageDigestB64, "base64");
+      const signerCertPem = mockHSM.getSignerCertificatePem();
+
+      const { signedAttrsDer } = signatureService.buildSignedAttributes({
+        messageDigest,
+        signerCertPem,
+      });
+
+      const signature = await mockHSM.signData(signedAttrsDer);
+
+      // Mock TSA failure for this test
+      vi.mocked(requestTimestamp).mockRejectedValueOnce(new Error("TSA unavailable"));
+
+      const cmsResult = await cmsService.assembleCMS({
+        signedAttrsDer,
+        signature,
+        signerCertPem,
+        withTimestamp: true, // This will fail and fall back to B-B
+      });
+
+      const preparedBytes = Buffer.from(prepareResult.preparedPdfBase64, "base64");
+      const signedPdf = pdfService.embedCmsIntoPdf(
+        new Uint8Array(preparedBytes),
+        new Uint8Array(cmsResult.cmsDer),
+      );
+
+      const verificationResult = await verificationService.verify(Buffer.from(signedPdf));
+
+      // Should be valid B-B signature (timestamp failed, fell back)
+      expect(verificationResult.signatureLevel).toBe("B-B");
+      expect(verificationResult.isTimestamped).toBe(false);
+      expect(verificationResult.timestampValidation).toBeUndefined();
+      expect(verificationResult.isCryptographicallyValid).toBe(true);
     });
   });
 });
