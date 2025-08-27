@@ -1,16 +1,20 @@
-/* Basic styling for the POC application */
+/* Enhanced styling for the POC application */
 :root {
   --primary-color: #2563eb;
+  --primary-hover: #1d4ed8;
   --success-color: #16a34a;
   --error-color: #dc2626;
   --warning-color: #ca8a04;
+  --secondary-color: #6b7280;
   --text-color: #1f2937;
   --text-muted: #6b7280;
   --bg-color: #ffffff;
   --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
   --border-color: #e5e7eb;
   --border-radius: 8px;
   --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
 
 * {
@@ -55,13 +59,14 @@ body {
 .app-main {
   flex: 1;
   padding: 2rem;
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
   width: 100%;
 }
 
 .status-card,
-.workflow-card {
+.workflow-card,
+.workflow-section {
   background: var(--bg-color);
   border-radius: var(--border-radius);
   padding: 1.5rem;
@@ -71,11 +76,20 @@ body {
 }
 
 .status-card h2,
-.workflow-card h2 {
+.workflow-card h2,
+.workflow-section h2 {
   margin-bottom: 1rem;
   color: var(--text-color);
   font-size: 1.25rem;
   font-weight: 600;
+}
+
+.status-details {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.875rem;
+  color: var(--text-muted);
 }
 
 .success {
@@ -102,6 +116,7 @@ body {
   border-radius: var(--border-radius);
   cursor: pointer;
   font-size: 0.875rem;
+  transition: opacity 0.2s;
 }
 
 .error button:hover {
@@ -132,6 +147,284 @@ body {
   font-size: 0.875rem;
 }
 
+/* PDF Workflow Styles */
+.pdf-workflow {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.config-form {
+  background: var(--bg-tertiary);
+  padding: 1.5rem;
+  border-radius: var(--border-radius);
+  margin: 1rem 0;
+}
+
+.config-form h3 {
+  margin-bottom: 1rem;
+  color: var(--text-color);
+  font-size: 1.1rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group label {
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: var(--text-color);
+  font-size: 0.875rem;
+}
+
+.form-group input {
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-size: 0.875rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.action-buttons {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.file-upload-section {
+  display: flex;
+  align-items: center;
+}
+
+/* Button Styles */
+.btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  min-height: 44px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--primary-color);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
+}
+
+.btn-secondary {
+  background: var(--secondary-color);
+  color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #4b5563;
+  transform: translateY(-1px);
+}
+
+.btn-download {
+  background: var(--success-color);
+  color: white;
+}
+
+.btn-download:hover:not(:disabled) {
+  background: #15803d;
+}
+
+.btn-small {
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  min-height: 32px;
+  background: var(--bg-secondary);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+}
+
+.btn-small:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+}
+
+/* Status and Error Messages */
+.error-message {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: var(--error-color);
+  padding: 1rem;
+  border-radius: var(--border-radius);
+  margin: 1rem 0;
+}
+
+.pdf-status {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: var(--success-color);
+  padding: 1rem;
+  border-radius: var(--border-radius);
+  margin: 1rem 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.status-info p {
+  margin: 0.25rem 0;
+}
+
+/* PDF Preview */
+.pdf-preview-section {
+  background: var(--bg-color);
+  border-radius: var(--border-radius);
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+}
+
+.pdf-preview-section h3 {
+  margin-bottom: 1rem;
+  color: var(--text-color);
+}
+
+.pdf-viewer {
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+}
+
+/* Logs Section */
+.logs-section {
+  background: var(--bg-color);
+  border-radius: var(--border-radius);
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+}
+
+.logs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.logs-header h3 {
+  color: var(--text-color);
+  margin: 0;
+}
+
+.logs-container {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 1rem;
+  border-radius: var(--border-radius);
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.no-logs {
+  text-align: center;
+  color: #64748b;
+  font-style: italic;
+}
+
+.log-entry {
+  margin: 0.25rem 0;
+  display: flex;
+  gap: 0.5rem;
+  word-break: break-word;
+}
+
+.log-time {
+  color: #64748b;
+  min-width: 60px;
+  flex-shrink: 0;
+}
+
+.log-level {
+  min-width: 70px;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.log-source {
+  min-width: 80px;
+  flex-shrink: 0;
+  color: #94a3b8;
+}
+
+.log-message {
+  flex: 1;
+}
+
+/* Log level colors */
+.log-debug .log-level { color: #94a3b8; }
+.log-info .log-level { color: #60a5fa; }
+.log-success .log-level { color: #34d399; }
+.log-warning .log-level { color: #fbbf24; }
+.log-error .log-level { color: #f87171; }
+
+/* Backend logs styling */
+.log-backend {
+  background: rgba(59, 130, 246, 0.1);
+  border-left: 3px solid #3b82f6;
+  padding-left: 0.5rem;
+  margin-left: -0.5rem;
+}
+
+/* Scrollbar styling */
+.logs-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.logs-container::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+.logs-container::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 3px;
+}
+
+.logs-container::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
 .app-footer {
   background: var(--bg-color);
   border-top: 1px solid var(--border-color);
@@ -156,13 +449,48 @@ body {
   }
   
   .status-card,
-  .workflow-card {
+  .workflow-card,
+  .workflow-section {
     padding: 1rem;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pdf-status {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .logs-header {
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-start;
   }
 }
 
 @media (min-width: 1024px) {
   .workflow-steps {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .pdf-workflow {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 1400px) {
+  .pdf-workflow {
+    grid-template-columns: 2fr 1fr;
+  }
+  
+  .logs-section {
+    grid-column: 1 / -1;
   }
 }

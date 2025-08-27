@@ -1,5 +1,6 @@
 import React, { useState, useEffect, JSX } from "react";
 
+import { PDFWorkflow } from "./components/PDFWorkflow";
 import { ApiClient } from "./services/api";
 
 import type { HealthResponse } from "@pades-poc/shared";
@@ -20,8 +21,9 @@ function App(): JSX.Element {
       setError(null);
       const response = await apiClient.checkHealth();
       setHealthStatus(response);
-    } catch {
-      setError("Connection failed");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Connection failed";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -39,60 +41,71 @@ function App(): JSX.Element {
       </header>
 
       <main className="app-main">
+        {/* Backend Status */}
         <div className="status-card">
-          <h2>Backend Status</h2>
-          {loading && <p>Checking connection...</p>}
+          <h2>État du backend</h2>
+          {loading && <p>Vérification de la connexion...</p>}
           {error && (
             <div className="error">
-              <p>❌ Connection failed: {error}</p>
+              <p>❌ Échec de la connexion: {error}</p>
               <button onClick={handleRetryConnection} type="button">
-                Retry Connection
+                Réessayer la connexion
               </button>
             </div>
           )}
           {healthStatus && (
             <div className="success">
               <p>✅ {healthStatus.service} is running</p>
-              <p>Version: {healthStatus.version}</p>
-              <p>Status: {healthStatus.status}</p>
-              <p>Last checked: {new Date(healthStatus.timestamp).toLocaleString()}</p>
+              <div className="status-details">
+                <span>Version: {healthStatus.version}</span>
+                <span>Status: {healthStatus.status}</span>
+                <span>
+                  Dernière vérification: {new Date(healthStatus.timestamp).toLocaleString("fr-FR")}
+                </span>
+              </div>
             </div>
           )}
         </div>
 
-        <div className="workflow-card">
-          <h2>Signing Workflow</h2>
-          <p>
-            PAdES-B-T signature workflow will be available here once the backend services are
-            implemented.
-          </p>
-          <div className="workflow-steps">
-            <div className="step">
-              <h3>1. Generate/Upload PDF</h3>
-              <p>Create demo ePrescription or upload existing PDF</p>
-            </div>
-            <div className="step">
-              <h3>2. Prepare for Signing</h3>
-              <p>Calculate ByteRange and message digest</p>
-            </div>
-            <div className="step">
-              <h3>3. Sign with CPS/Mock HSM</h3>
-              <p>External signature using CPS card or mock HSM</p>
-            </div>
-            <div className="step">
-              <h3>4. Finalize & Timestamp</h3>
-              <p>Assemble CMS with timestamp (PAdES-B-T)</p>
-            </div>
-            <div className="step">
-              <h3>5. Verify Signature</h3>
-              <p>Validate cryptographic integrity and compliance</p>
+        {/* PDF Workflow - Only show when backend is healthy */}
+        {healthStatus && <PDFWorkflow apiClient={apiClient} />}
+
+        {/* Next Steps Preview - Show when no healthy backend */}
+        {!healthStatus && (
+          <div className="workflow-card">
+            <h2>Workflow de signature</h2>
+            <p>
+              Le workflow de signature PAdES-B-T sera disponible une fois que les services backend
+              seront opérationnels.
+            </p>
+            <div className="workflow-steps">
+              <div className="step">
+                <h3>1. Générer/Charger PDF</h3>
+                <p>Créer une ePrescription de démonstration ou charger un PDF existant</p>
+              </div>
+              <div className="step">
+                <h3>2. Préparer pour signature</h3>
+                <p>Calculer ByteRange et condensé du message</p>
+              </div>
+              <div className="step">
+                <h3>3. Signer avec CPS/Mock HSM</h3>
+                <p>Signature externe avec carte CPS ou Mock HSM</p>
+              </div>
+              <div className="step">
+                <h3>4. Finaliser & Horodatage</h3>
+                <p>Assembler le CMS avec horodatage (PAdES-B-T)</p>
+              </div>
+              <div className="step">
+                <h3>5. Vérifier la signature</h3>
+                <p>Valider l'intégrité cryptographique et la conformité</p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </main>
 
       <footer className="app-footer">
-        <p>PAdES-B-T POC - Standards compliant electronic signatures</p>
+        <p>PAdES-B-T POC - Signatures électroniques conformes aux standards</p>
       </footer>
     </div>
   );
