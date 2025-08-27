@@ -1,6 +1,6 @@
 import React, { useState, useRef, ChangeEvent, useEffect } from "react";
 
-import { ApiClient } from "../services/api";
+import { ApiClient, ApiRequestError } from "../services/api";
 import { IcanopeeService } from "../services/icanopee";
 
 import type { LogEntry, PDFSigningConfig, PcscReader } from "@pades-poc/shared";
@@ -149,7 +149,7 @@ export const PDFWorkflow: React.FC<PDFWorkflowProps> = ({ apiClient }) => {
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
       setError(`Erreur lors du chargement du fichier: ${errorMessage}`);
       let logMsg = `Failed to load PDF file: ${errorMessage}`;
-      if (err && typeof err === "object" && "requestBody" in err && err.requestBody) {
+      if (err instanceof ApiRequestError && err.requestBody !== undefined) {
         logMsg += ` | Request body: ${JSON.stringify(err.requestBody)}`;
       }
       addLog("error", logMsg);
@@ -187,7 +187,7 @@ export const PDFWorkflow: React.FC<PDFWorkflowProps> = ({ apiClient }) => {
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
       setError(`Erreur lors de la génération: ${errorMessage}`);
       let logMsg = `Demo PDF generation failed: ${errorMessage}`;
-      if (err && typeof err === "object" && "requestBody" in err && err.requestBody) {
+      if (err instanceof ApiRequestError && err.requestBody !== undefined) {
         logMsg += ` | Request body: ${JSON.stringify(err.requestBody)}`;
       }
       addLog("error", logMsg);
@@ -229,7 +229,7 @@ export const PDFWorkflow: React.FC<PDFWorkflowProps> = ({ apiClient }) => {
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
       setError(`Erreur lors de la préparation: ${errorMessage}`);
       let logMsg = `PDF preparation failed: ${errorMessage}`;
-      if (err && typeof err === "object" && "requestBody" in err && err.requestBody) {
+      if (err instanceof ApiRequestError && err.requestBody !== undefined) {
         logMsg += ` | Request body: ${JSON.stringify(err.requestBody)}`;
       }
       addLog("error", logMsg);
@@ -297,7 +297,7 @@ export const PDFWorkflow: React.FC<PDFWorkflowProps> = ({ apiClient }) => {
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
       setError(`Erreur lors de la préparation de signature: ${errorMessage}`);
       let logMsg = `Presign failed: ${errorMessage}`;
-      if (err && typeof err === "object" && "requestBody" in err && err.requestBody) {
+      if (err instanceof ApiRequestError && err.requestBody !== undefined) {
         logMsg += ` | Request body: ${JSON.stringify(err.requestBody)}`;
       }
       addLog("error", logMsg);
@@ -427,7 +427,7 @@ export const PDFWorkflow: React.FC<PDFWorkflowProps> = ({ apiClient }) => {
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
       setError(`Erreur de finalisation: ${errorMessage}`);
       let logMsg = `Finalize failed: ${errorMessage}`;
-      if (err && typeof err === "object" && "requestBody" in err && err.requestBody) {
+      if (err instanceof ApiRequestError && err.requestBody !== undefined) {
         logMsg += ` | Request body: ${JSON.stringify(err.requestBody)}`;
       }
       addLog("error", logMsg);
@@ -473,7 +473,7 @@ export const PDFWorkflow: React.FC<PDFWorkflowProps> = ({ apiClient }) => {
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
       setError(`Erreur de vérification: ${errorMessage}`);
       let logMsg = `Verification failed: ${errorMessage}`;
-      if (err && typeof err === "object" && "requestBody" in err && err.requestBody) {
+      if (err instanceof ApiRequestError && err.requestBody !== undefined) {
         logMsg += ` | Request body: ${JSON.stringify(err.requestBody)}`;
       }
       addLog("error", logMsg);

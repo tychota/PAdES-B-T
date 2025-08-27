@@ -21,6 +21,17 @@ interface ApiErrorResponse {
   error: PAdESError;
 }
 
+export class ApiRequestError extends Error {
+  public requestBody?: unknown;
+  constructor(message: string, requestBody?: unknown) {
+    super(message);
+    this.name = "ApiRequestError";
+    if (requestBody !== undefined) {
+      this.requestBody = requestBody;
+    }
+  }
+}
+
 export class ApiClient {
   private client: AxiosInstance;
 
@@ -55,18 +66,12 @@ export class ApiClient {
           const responseData = error.response.data as ApiErrorResponse;
           const apiError = responseData.error;
           // Attach request body if available
-          const requestBody = error.config?.data;
-          const customError: any = new Error(`[${apiError.code}] ${apiError.message}`);
-          if (requestBody !== undefined) {
-            customError.requestBody = requestBody;
-          }
-          throw customError;
+          const requestBody: unknown = error.config?.data;
+          throw new ApiRequestError(`[${apiError.code}] ${apiError.message}`, requestBody);
         }
         // Attach request body if available for generic errors
         if (this.isAxiosError(error) && error.config?.data !== undefined) {
-          const customError: any = new Error("API request failed");
-          customError.requestBody = error.config.data;
-          throw customError;
+          throw new ApiRequestError("API request failed", error.config.data as unknown);
         }
         throw new Error("API request failed");
       },
