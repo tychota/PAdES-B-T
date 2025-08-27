@@ -71,7 +71,7 @@ export class SignatureService {
         }),
       );
 
-      // 2. messageDigest (mandatory)
+      // 2. messageDigest (mandatory) — digest of the PDF's ByteRange
       attributes.push(
         new Attribute({
           type: "1.2.840.113549.1.9.4", // messageDigest OID
@@ -86,31 +86,39 @@ export class SignatureService {
         }),
       );
 
-      // 3. signingCertificateV2 (recommended for PAdES)
-      const hashAlgId = new asn1js.Sequence({
-        value: [
-          new asn1js.ObjectIdentifier({ value: "2.16.840.1.101.3.4.2.1" }), // SHA-256
-          new asn1js.Null(),
-        ],
+      // 3. signingCertificateV2 (RFC 5035; used by PAdES)
+      //    - Omit hashAlgorithm (defaults to SHA-256; params MUST be ABSENT per RFC 5754)
+      //    - INCLUDE issuerSerial = { GeneralNames(directoryName(issuer)), serialNumber }
+      // directoryName [4] containing the issuer Name
+      const directoryName = new asn1js.Constructed({
+        idBlock: { tagClass: 3, tagNumber: 4, isConstructed: true }, // [4] directoryName
+        value: [cert.issuer.toSchema()],
       });
 
+      const generalNames = new asn1js.Sequence({ value: [directoryName] });
+
+      // IssuerSerial ::= SEQUENCE { issuer GeneralNames, serialNumber CertificateSerialNumber }
+      const issuerSerial = new asn1js.Sequence({
+        value: [generalNames, cert.serialNumber],
+      });
+
+      // ESSCertIDv2 ::= SEQUENCE { certHash OCTET STRING, issuerSerial IssuerSerial OPTIONAL, ... }
+      // (hashAlgorithm omitted → defaults to SHA-256)
       const essCertIDv2 = new asn1js.Sequence({
         value: [
-          hashAlgId,
           new asn1js.OctetString({
             valueHex: certHash.buffer.slice(
               certHash.byteOffset,
               certHash.byteOffset + certHash.byteLength,
             ) as ArrayBuffer,
           }),
-          // IssuerSerial omitted for simplicity
+          issuerSerial,
         ],
       });
 
+      // SigningCertificateV2 ::= SEQUENCE OF ESSCertIDv2
       const signingCertV2 = new asn1js.Sequence({
-        value: [
-          new asn1js.Sequence({ value: [essCertIDv2] }), // SEQUENCE OF ESSCertIDv2
-        ],
+        value: [new asn1js.Sequence({ value: [essCertIDv2] })],
       });
 
       attributes.push(
@@ -126,13 +134,13 @@ export class SignatureService {
         .sort((a, b) => Buffer.compare(a.der, b.der))
         .map((item) => item.attr);
 
-      // Create SET OF Attribute for hashing
+      // Create SET OF Attribute for hashing (the exact DER is what gets signed)
       const attributesSet = new asn1js.Set({
         value: sortedAttributes.map((attr) => attr.toSchema()),
       });
       const signedAttrsDer = Buffer.from(attributesSet.toBER(false));
 
-      // Calculate hash of DER-encoded signed attributes (this is what gets signed)
+      // Calculate hash of DER-encoded signed attributes (card/HSM signs the DER itself)
       const toBeSignedHash = sha256(signedAttrsDer);
 
       if (logs) {
