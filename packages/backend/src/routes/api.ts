@@ -7,6 +7,7 @@ import { fromBase64, toBase64 } from "../services/crypto-utils";
 import { MockHSMService } from "../services/mock-hsm-service";
 import { PDFService } from "../services/pdf-service";
 import { SignatureService } from "../services/signature-service";
+import { VerificationService } from "../services/verification-service";
 
 import type {
   HealthResponse,
@@ -447,7 +448,7 @@ router.post("/pdf/finalize", async (req, res) => {
 });
 
 // Verify signed PDF
-router.post("/pdf/verify", (req, res) => {
+router.post("/pdf/verify", async (req, res) => {
   const request = req.body as VerificationRequest;
   const workflowId = generateShortId();
   const pdfSize = Buffer.from(request.pdfBase64 || "", "base64").length;
@@ -462,24 +463,82 @@ router.post("/pdf/verify", (req, res) => {
   );
   logPAdES(entry);
 
-  // TODO: Implement verification
-  const response: VerificationResponse = {
-    success: false,
-    error: {
-      code: "NOT_IMPLEMENTED",
-      message: "PDF verification not yet implemented",
-      timestamp: new Date().toISOString(),
-    },
-    result: {
-      isCryptographicallyValid: false,
-      isPAdESCompliant: false,
-      isTimestamped: false,
-      signatureLevel: "UNKNOWN",
-      reasons: ["Not yet implemented"],
-    },
-  };
+  try {
+    // Initialize verification service
+    const verificationService = new VerificationService();
 
-  res.status(501).json(response);
+    // Verify the PDF
+    const verificationResult = await verificationService.verify({
+      pdfBase64: request.pdfBase64,
+    });
+
+    // Log verification logs
+    verificationResult.logs.forEach((log) => logPAdES(log));
+
+    const successEntry = padesBackendLogger.logWorkflowStep(
+      verificationResult.isCryptographicallyValid ? "success" : "warning",
+      "backend",
+      "verify",
+      `PDF verification completed: ${verificationResult.isCryptographicallyValid ? "VALID" : "INVALID"}`,
+      workflowId,
+      {
+        isValid: verificationResult.isCryptographicallyValid,
+        signatureLevel: verificationResult.signatureLevel,
+        isTimestamped: verificationResult.isTimestamped,
+        signerCN: verificationResult.signerCN,
+        reasonCount: verificationResult.reasons.length,
+      },
+    );
+    logPAdES(successEntry);
+
+    const response: VerificationResponse = {
+      success: true,
+      result: {
+        isCryptographicallyValid: verificationResult.isCryptographicallyValid,
+        isPAdESCompliant: verificationResult.isPAdESCompliant,
+        isTimestamped: verificationResult.isTimestamped,
+        signatureLevel: verificationResult.signatureLevel,
+        signerCN: verificationResult.signerCN,
+        signingTime: verificationResult.signingTime,
+        timestampTime: verificationResult.timestampTime,
+        byteRange: verificationResult.byteRange,
+        reasons: verificationResult.reasons,
+        certValidNow: verificationResult.certValidNow,
+      },
+    };
+
+    res.json(response);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    const errorEntry = padesBackendLogger.logWorkflowStep(
+      "error",
+      "backend",
+      "verify",
+      `PDF verification failed: ${errorMessage}`,
+      workflowId,
+    );
+    logPAdES(errorEntry);
+
+    const response: VerificationResponse = {
+      success: false,
+      error: {
+        code: "VERIFICATION_FAILED",
+        message: errorMessage,
+        timestamp: new Date().toISOString(),
+      },
+      result: {
+        isCryptographicallyValid: false,
+        isPAdESCompliant: false,
+        isTimestamped: false,
+        signatureLevel: "UNKNOWN",
+        reasons: [errorMessage],
+        certValidNow: false,
+      },
+    };
+
+    res.status(500).json(response);
+  }
 });
 
 // Mock HSM signing endpoint (for development)
