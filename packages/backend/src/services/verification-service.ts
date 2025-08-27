@@ -22,8 +22,10 @@ import {
 
 // ── internal services
 import { CertificateChainValidator } from "./certificate-chain-validator";
+import { PAdESComplianceChecker } from "./pades-compliance-checker";
 import { PdfByteParser } from "./pdf/byte-parser";
 
+import type { ComplianceCheck } from "./pades-compliance-checker";
 import type { LogEntry } from "@pades-poc/shared";
 
 // PKI.js needs a WebCrypto engine in Node
@@ -77,6 +79,17 @@ export interface VerificationResult {
   };
   // Enhanced timestamp information
   timestampValidation?: TimestampValidationResult;
+  // Enhanced compliance information
+  complianceDetails?: {
+    profile: string;
+    checks: ComplianceCheck[];
+    summary: {
+      mandatoryPassed: number;
+      mandatoryTotal: number;
+      recommendedPassed: number;
+      recommendedTotal: number;
+    };
+  };
 }
 
 export interface VerificationParams {
@@ -93,6 +106,7 @@ export interface VerificationServiceResult extends VerificationResult {
 export class VerificationService {
   private parser: PdfByteParser;
   private chainValidator: CertificateChainValidator;
+  private complianceChecker: PAdESComplianceChecker;
 
   constructor(fieldName = "Signature1") {
     this.parser = new PdfByteParser(fieldName);
@@ -102,6 +116,7 @@ export class VerificationService {
       checkKeyUsage: true,
       maxChainLength: 10,
     });
+    this.complianceChecker = new PAdESComplianceChecker();
   }
 
   /**
@@ -119,7 +134,7 @@ export class VerificationService {
           ? new Uint8Array(input)
           : Buffer.isBuffer(input)
             ? new Uint8Array(input)
-            : new Uint8Array(Buffer.from(input.pdfBase64, "base64"));
+            : new Uint8Array(Buffer.from((input as { pdfBase64: string }).pdfBase64, "base64"));
 
     const reasons: string[] = [];
 
@@ -319,27 +334,31 @@ export class VerificationService {
       }
     }
 
-    // 5) Minimal PAdES-B-B compliance: detached CMS with contentType + messageDigest
-    const hasContentType = Boolean(
-      signerInfo.signedAttrs?.attributes.find(
-        (a) => a.type === "1.2.840.113549.1.9.3", // contentType
-      ),
+    // 5) Enhanced PAdES Compliance Checking
+    const complianceResult = await this.complianceChecker.checkCompliance(
+      signedData,
+      signerInfo,
+      isTimestamped,
+      signatureVerified,
+      digestMatches,
+      certificateChain?.isValid ?? false,
+      logs,
     );
 
-    const timestampValid = !isTimestamped || (timestampValidation?.isValid ?? false);
-    const isPAdESCompliant =
-      signatureVerified &&
-      hasContentType &&
-      digestMatches &&
-      (certificateChain?.isValid ?? false) &&
-      timestampValid;
+    const complianceDetails = {
+      profile: complianceResult.profile,
+      checks: complianceResult.checks,
+      summary: complianceResult.summary,
+    };
 
-    const signatureLevel: SignatureLevel = signatureVerified
-      ? isTimestamped
-        ? "B-T"
-        : "B-B"
-      : "UNKNOWN";
+    // Add compliance failures to main reasons
+    const failedMandatoryChecks = complianceResult.checks.filter(
+      (c) => c.level === "mandatory" && !c.satisfied,
+    );
+    reasons.push(...failedMandatoryChecks.map((c) => c.requirement));
 
+    const isPAdESCompliant = complianceResult.isCompliant;
+    const signatureLevel = complianceResult.signatureLevel;
     const signerCN = this.getSubjectCN(signerCert);
 
     logs.push({
@@ -352,7 +371,9 @@ export class VerificationService {
         signatureVerified,
         digestMatches,
         chainValid: certificateChain?.isValid ?? false,
-        timestampValid,
+        timestampValid: !isTimestamped || (timestampValidation?.isValid ?? false),
+        compliancePassed: complianceResult.summary.mandatoryPassed,
+        complianceTotal: complianceResult.summary.mandatoryTotal,
         signerCN,
       },
     });
@@ -367,6 +388,7 @@ export class VerificationService {
       reasons,
       certificateChain,
       timestampValidation,
+      complianceDetails,
       logs,
     };
   }

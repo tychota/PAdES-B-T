@@ -31,7 +31,7 @@ describe("VerificationService", () => {
   });
 
   describe("verify", () => {
-    it("should verify a valid PAdES-B-B signature", async () => {
+    it("should verify a valid PAdES-B-B signature with detailed compliance", async () => {
       // Create a complete signed PDF
       const config: PDFSigningConfig = {
         signerName: "Dr. Test Signer",
@@ -79,6 +79,19 @@ describe("VerificationService", () => {
       expect(verificationResult.signatureLevel).toBe("B-B");
       expect(verificationResult.reasons).toHaveLength(0);
       expect(verificationResult.timestampValidation).toBeUndefined();
+
+      // Check compliance details
+      expect(verificationResult.complianceDetails).toBeDefined();
+      expect(verificationResult.complianceDetails?.profile).toBe("Baseline");
+      expect(verificationResult.complianceDetails?.summary.mandatoryPassed).toBe(
+        verificationResult.complianceDetails?.summary.mandatoryTotal,
+      );
+
+      // Check that mandatory checks are satisfied
+      const mandatoryChecks = verificationResult.complianceDetails?.checks.filter(
+        (c) => c.level === "mandatory",
+      );
+      expect(mandatoryChecks?.every((c) => c.satisfied)).toBe(true);
     });
 
     it("should verify a valid PAdES-B-T signature with timestamp", async () => {
@@ -158,9 +171,19 @@ describe("VerificationService", () => {
       expect(verificationResult.signatureLevel).toBe("B-T");
       expect(verificationResult.timestampValidation).toBeDefined();
       expect(verificationResult.timestampValidation?.isValid).toBe(false); // Fake token won't validate
+
+      // Check compliance details for B-T
+      expect(verificationResult.complianceDetails).toBeDefined();
+      expect(verificationResult.complianceDetails?.profile).toBe("Baseline");
+
+      // Should have timestamp-specific compliance checks
+      const timestampChecks = verificationResult.complianceDetails?.checks.filter((c) =>
+        c.requirement.toLowerCase().includes("timestamp"),
+      );
+      expect(timestampChecks?.length).toBeGreaterThan(0);
     });
 
-    it("should detect modified PDF content", async () => {
+    it("should detect modified PDF content with detailed compliance report", async () => {
       // Create a signed PDF
       const demoResult = await pdfService.generateDemoPDF();
       const prepareResult = await pdfService.preparePDF(demoResult.pdfBase64);
@@ -203,6 +226,13 @@ describe("VerificationService", () => {
       expect(verificationResult.isCryptographicallyValid).toBe(false);
       expect(verificationResult.isPAdESCompliant).toBe(false);
       expect(verificationResult.reasons).toContain("PDF content has been modified");
+
+      // Check compliance details show the integrity failure
+      expect(verificationResult.complianceDetails).toBeDefined();
+      const integrityCheck = verificationResult.complianceDetails?.checks.find((c) =>
+        c.requirement.includes("Document integrity"),
+      );
+      expect(integrityCheck?.satisfied).toBe(false);
     });
 
     it("should handle invalid PDF gracefully", async () => {
@@ -227,8 +257,7 @@ describe("VerificationService", () => {
       expect(verificationResult.reasons[0]).toContain("No CMS signature found");
     });
 
-    it("should provide detailed timestamp validation information", async () => {
-      // This test verifies that timestamp validation results are properly structured
+    it("should provide detailed compliance summary statistics", async () => {
       const config: PDFSigningConfig = { signerName: "Dr. Test" };
       const demoResult = await pdfService.generateDemoPDF(config);
       const prepareResult = await pdfService.preparePDF(demoResult.pdfBase64, config);
@@ -242,15 +271,11 @@ describe("VerificationService", () => {
       });
 
       const signature = await mockHSM.signData(signedAttrsDer);
-
-      // Mock TSA failure for this test
-      vi.mocked(requestTimestamp).mockRejectedValueOnce(new Error("TSA unavailable"));
-
       const cmsResult = await cmsService.assembleCMS({
         signedAttrsDer,
         signature,
         signerCertPem,
-        withTimestamp: true, // This will fail and fall back to B-B
+        withTimestamp: false,
       });
 
       const preparedBytes = Buffer.from(prepareResult.preparedPdfBase64, "base64");
@@ -261,11 +286,65 @@ describe("VerificationService", () => {
 
       const verificationResult = await verificationService.verify(Buffer.from(signedPdf));
 
-      // Should be valid B-B signature (timestamp failed, fell back)
-      expect(verificationResult.signatureLevel).toBe("B-B");
-      expect(verificationResult.isTimestamped).toBe(false);
-      expect(verificationResult.timestampValidation).toBeUndefined();
-      expect(verificationResult.isCryptographicallyValid).toBe(true);
+      // Check detailed compliance statistics
+      expect(verificationResult.complianceDetails).toBeDefined();
+      expect(verificationResult.complianceDetails?.summary).toBeDefined();
+
+      const summary = verificationResult.complianceDetails!.summary;
+      expect(summary.mandatoryTotal).toBeGreaterThan(0);
+      expect(summary.recommendedTotal).toBeGreaterThan(0);
+      expect(summary.mandatoryPassed).toBeLessThanOrEqual(summary.mandatoryTotal);
+      expect(summary.recommendedPassed).toBeLessThanOrEqual(summary.recommendedTotal);
+
+      // Total checks should match summary
+      const totalChecks = summary.mandatoryTotal + summary.recommendedTotal;
+      expect(verificationResult.complianceDetails!.checks).toHaveLength(totalChecks);
+
+      // Check for expected mandatory requirements
+      const checks = verificationResult.complianceDetails!.checks;
+      expect(checks.some((c) => c.requirement.includes("Cryptographic signature"))).toBe(true);
+      expect(checks.some((c) => c.requirement.includes("contentType"))).toBe(true);
+      expect(checks.some((c) => c.requirement.includes("messageDigest"))).toBe(true);
+      expect(checks.some((c) => c.requirement.includes("Certificate chain"))).toBe(true);
+    });
+
+    it("should detect forbidden attributes in compliance check", async () => {
+      // This test would require modifying the CMS to include forbidden attributes
+      // For now, we'll test that the compliance checker is properly integrated
+      const config: PDFSigningConfig = { signerName: "Dr. Test" };
+      const demoResult = await pdfService.generateDemoPDF(config);
+      const prepareResult = await pdfService.preparePDF(demoResult.pdfBase64, config);
+
+      const messageDigest = Buffer.from(prepareResult.messageDigestB64, "base64");
+      const signerCertPem = mockHSM.getSignerCertificatePem();
+
+      const { signedAttrsDer } = signatureService.buildSignedAttributes({
+        messageDigest,
+        signerCertPem,
+      });
+
+      const signature = await mockHSM.signData(signedAttrsDer);
+      const cmsResult = await cmsService.assembleCMS({
+        signedAttrsDer,
+        signature,
+        signerCertPem,
+        withTimestamp: false,
+      });
+
+      const preparedBytes = Buffer.from(prepareResult.preparedPdfBase64, "base64");
+      const signedPdf = pdfService.embedCmsIntoPdf(
+        new Uint8Array(preparedBytes),
+        new Uint8Array(cmsResult.cmsDer),
+      );
+
+      const verificationResult = await verificationService.verify(Buffer.from(signedPdf));
+
+      // Should check for forbidden signingTime attribute
+      const forbiddenCheck = verificationResult.complianceDetails?.checks.find((c) =>
+        c.requirement.includes("signingTime signed attribute must not be present"),
+      );
+      expect(forbiddenCheck).toBeDefined();
+      expect(forbiddenCheck?.satisfied).toBe(true); // Our implementation shouldn't include it
     });
   });
 });

@@ -24,6 +24,24 @@ export interface CertificateChainInfo {
   reasons: string[];
 }
 
+export interface ComplianceCheck {
+  requirement: string;
+  satisfied: boolean;
+  level: "mandatory" | "recommended" | "optional";
+  details?: string;
+}
+
+export interface ComplianceDetails {
+  profile: string;
+  checks: ComplianceCheck[];
+  summary: {
+    mandatoryPassed: number;
+    mandatoryTotal: number;
+    recommendedPassed: number;
+    recommendedTotal: number;
+  };
+}
+
 export interface VerificationResult {
   isCryptographicallyValid: boolean;
   isPAdESCompliant: boolean;
@@ -37,16 +55,11 @@ export interface VerificationResult {
   certValidNow?: boolean;
   byteRange?: ByteRange;
   certificateChain?: CertificateChainInfo;
+  complianceDetails?: ComplianceDetails;
 }
 
 export interface VerificationResponse extends BaseApiResponse {
   result: VerificationResult;
-}
-
-export interface ComplianceCheck {
-  requirement: string;
-  satisfied: boolean;
-  details?: string;
 }
 
 export interface DetailedVerificationResult extends VerificationResult {
