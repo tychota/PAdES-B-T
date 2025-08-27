@@ -255,19 +255,17 @@ export class CertificateChainValidator {
           valueHex: keyUsageExt.extnValue.valueBlock.valueHex,
         });
         // LOGGING: Output the raw valueHex and parsed bits for diagnosis
-        // eslint-disable-next-line no-console
+        // (console.log statements for debugging; remove eslint-disable if not needed)
         console.log(
           "[CertificateChainValidator] keyUsage extnValue.valueHex (hex):",
           Buffer.from(keyUsageExt.extnValue.valueBlock.valueHex).toString("hex"),
         );
-        // eslint-disable-next-line no-console
         console.log(
           "[CertificateChainValidator] keyUsageBits.valueBlock.valueHex (hex):",
           Buffer.from(keyUsageBits.valueBlock.valueHex).toString("hex"),
         );
         const bitsArr = new Uint8Array(keyUsageBits.valueBlock.valueHex);
         const bits = bitsArr.length > 0 ? bitsArr[bitsArr.length - 1] : 0;
-        // eslint-disable-next-line no-console
         console.log("[CertificateChainValidator] bits (byte):", bits);
 
         if (bits & 0x80) keyUsage.push("digitalSignature");

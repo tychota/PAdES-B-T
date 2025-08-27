@@ -501,9 +501,7 @@ router.post("/pdf/verify", async (req, res) => {
         signerCN: verificationResult.signerCN,
         signingTime: verificationResult.signingTime,
         timestampTime: verificationResult.timestampTime,
-        byteRange: verificationResult.byteRange,
         reasons: verificationResult.reasons,
-        certValidNow: verificationResult.certValidNow,
       },
     };
 
@@ -533,7 +531,6 @@ router.post("/pdf/verify", async (req, res) => {
         isTimestamped: false,
         signatureLevel: "UNKNOWN",
         reasons: [errorMessage],
-        certValidNow: false,
       },
     };
 
@@ -622,7 +619,7 @@ router.post("/mock/sign", async (req, res) => {
 
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown signing error";
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
     const errorEntry = padesBackendLogger.createLogEntry(
       "error",

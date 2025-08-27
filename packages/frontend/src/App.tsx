@@ -4,9 +4,8 @@ import { ApiClient } from "./services/api";
 
 import type { HealthResponse } from "@pades-poc/shared";
 
-const apiClient = new ApiClient();
-
 function App(): JSX.Element {
+  const apiClient = new ApiClient();
   const [healthStatus, setHealthStatus] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -21,9 +20,8 @@ function App(): JSX.Element {
       setError(null);
       const response = await apiClient.checkHealth();
       setHealthStatus(response);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to connect to backend";
-      setError(errorMessage);
+    } catch {
+      setError("Connection failed");
     } finally {
       setLoading(false);
     }
