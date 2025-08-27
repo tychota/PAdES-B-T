@@ -54,7 +54,19 @@ export class ApiClient {
         if (this.isAxiosError(error) && error.response?.data) {
           const responseData = error.response.data as ApiErrorResponse;
           const apiError = responseData.error;
-          throw new Error(`[${apiError.code}] ${apiError.message}`);
+          // Attach request body if available
+          const requestBody = error.config?.data;
+          const customError: any = new Error(`[${apiError.code}] ${apiError.message}`);
+          if (requestBody !== undefined) {
+            customError.requestBody = requestBody;
+          }
+          throw customError;
+        }
+        // Attach request body if available for generic errors
+        if (this.isAxiosError(error) && error.config?.data !== undefined) {
+          const customError: any = new Error("API request failed");
+          customError.requestBody = error.config.data;
+          throw customError;
         }
         throw new Error("API request failed");
       },
