@@ -8,6 +8,8 @@
 import * as asn1js from "asn1js";
 import { Certificate } from "pkijs";
 
+import { logPAdES, padesBackendLogger } from "../logger";
+
 import type { LogEntry } from "@pades-poc/shared";
 
 export interface ChainValidationOptions {
@@ -254,19 +256,22 @@ export class CertificateChainValidator {
         const keyUsageBits = new asn1js.BitString({
           valueHex: keyUsageExt.extnValue.valueBlock.valueHex,
         });
-        // LOGGING: Output the raw valueHex and parsed bits for diagnosis
-        // (console.log statements for debugging; remove eslint-disable if not needed)
-        console.log(
-          "[CertificateChainValidator] keyUsage extnValue.valueHex (hex):",
-          Buffer.from(keyUsageExt.extnValue.valueBlock.valueHex).toString("hex"),
-        );
-        console.log(
-          "[CertificateChainValidator] keyUsageBits.valueBlock.valueHex (hex):",
-          Buffer.from(keyUsageBits.valueBlock.valueHex).toString("hex"),
-        );
+
+        // Structured debug logging for key usage extension parsing
+        const keyUsageHex = Buffer.from(keyUsageExt.extnValue.valueBlock.valueHex).toString("hex");
+        const keyUsageBitsHex = Buffer.from(keyUsageBits.valueBlock.valueHex).toString("hex");
         const bitsArr = new Uint8Array(keyUsageBits.valueBlock.valueHex);
         const bits = bitsArr.length > 0 ? bitsArr[bitsArr.length - 1] : 0;
-        console.log("[CertificateChainValidator] bits (byte):", bits);
+
+        logPAdES(
+          padesBackendLogger.createLogEntry("debug", "backend", "Parsed keyUsage extension", {
+            keyUsageHex,
+            keyUsageBitsHex,
+            bits,
+            subject,
+            serialNumber,
+          }),
+        );
 
         if (bits & 0x80) keyUsage.push("digitalSignature");
         if (bits & 0x40) keyUsage.push("nonRepudiation");
@@ -277,6 +282,19 @@ export class CertificateChainValidator {
         if (bits & 0x02) keyUsage.push("cRLSign");
       }
     }
+
+    logPAdES(
+      padesBackendLogger.createLogEntry("debug", "backend", "Extracted certificate info", {
+        subject,
+        issuer,
+        serialNumber,
+        validFrom: validFrom.toISOString(),
+        validTo: validTo.toISOString(),
+        keyUsage,
+        isValidNow,
+        isSelfSigned,
+      }),
+    );
 
     return {
       subject,
