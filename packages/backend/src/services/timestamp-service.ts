@@ -6,7 +6,7 @@
  */
 
 import { DEFAULT_CONFIG } from "@pades-poc/shared";
-import * as asn1js from "asn1js";
+import * as asn1js from "asn1js"; // Retained: required for nonce (Integer), fromBER, and ASN.1js Sequence
 import * as pkijs from "pkijs";
 
 import { toHex } from "./crypto-utils";
@@ -84,6 +84,7 @@ export async function requestTimestamp(params: TimestampRequest): Promise<Timest
     version: 1,
     messageImprint,
     certReq: requestCerts,
+    // ASN.1js Integer is required for nonce, as PKI.js expects ASN.1js object
     ...(nonce && {
       nonce: new asn1js.Integer({
         valueHex: messageBytes.buffer.slice(
@@ -169,6 +170,7 @@ export async function requestTimestamp(params: TimestampRequest): Promise<Timest
 
   // Return ContentInfo as ASN.1 Sequence so CMS layer can embed it directly
   return {
+    // ASN.1js Sequence is required for direct embedding in CMS unsignedAttrs
     timestampToken: tspResp.timeStampToken.toSchema(),
     timestampTime,
     tsaUrl,

@@ -465,13 +465,13 @@ export class MockHSMService {
     await cert.subjectPublicKeyInfo.importKey(params.keyPair.publicKey);
 
     // Set up X.509v3 extensions
-    const keyUsage = new Uint8Array(1);
+    let keyUsageBits = 0;
     if (params.isCA) {
-      keyUsage[0] |= 0x04; // keyCertSign (bit 2)
-      keyUsage[0] |= 0x02; // cRLSign (bit 1)
+      keyUsageBits |= 0x04; // keyCertSign (bit 2)
+      keyUsageBits |= 0x02; // cRLSign (bit 1)
     } else {
-      keyUsage[0] |= 0x80; // digitalSignature (bit 7)
-      keyUsage[0] |= 0x40; // nonRepudiation/contentCommitment (bit 6)
+      keyUsageBits |= 0x80; // digitalSignature (bit 7)
+      keyUsageBits |= 0x40; // nonRepudiation/contentCommitment (bit 6)
     }
 
     cert.extensions = [
@@ -489,7 +489,7 @@ export class MockHSMService {
         extnID: "2.5.29.15", // KeyUsage
         critical: true,
         extnValue: new asn1js.BitString({
-          valueHex: new Uint8Array([0, keyUsage[0]]).buffer,
+          valueHex: new Uint8Array([0, keyUsageBits]).buffer,
         }).toBER(false),
       }),
     ];

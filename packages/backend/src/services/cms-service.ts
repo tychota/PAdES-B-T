@@ -5,7 +5,7 @@
  * Supports PAdES-B-T with RFC 3161 timestamp tokens from TSA services.
  */
 
-import * as asn1js from "asn1js";
+import * as asn1js from "asn1js"; // Retained: needed for fromBER and OctetString
 import {
   Certificate,
   SignedData,
@@ -52,7 +52,9 @@ function pemToDer(pem: string): Buffer {
   return Buffer.from(b64Body, "base64");
 }
 
-/** Parse DER(SET OF Attribute) → Attribute[] using PKI.js */
+/** Parse DER(SET OF Attribute) → Attribute[] using PKI.js
+ * ASN.1js is required for initial DER parsing, PKI.js for Attribute construction.
+ */
 function parseSignedAttributes(der: Buffer): Attribute[] {
   const asn = asn1js.fromBER(der);
   if (asn.offset === -1 || !(asn.result instanceof asn1js.Set)) {
@@ -152,6 +154,7 @@ function buildCMS(
 
   // Signature value
   const sigBytes = new Uint8Array(signature);
+  // ASN.1js OctetString is required here because PKI.js expects ASN.1js object for signature
   signerInfo.signature = new asn1js.OctetString({ valueHex: sigBytes.buffer });
 
   // Optional unsigned attributes (e.g., signatureTimeStampToken)

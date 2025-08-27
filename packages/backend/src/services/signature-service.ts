@@ -7,7 +7,7 @@
  * - Still uses small asn1js bits for OIDs/OctetString and SigningCertificateV2 payload
  */
 
-import * as asn1js from "asn1js";
+import * as asn1js from "asn1js"; // Retained: required for ESSCertIDv2, attribute values, and Set
 import { Attribute, Certificate, SignedAndUnsignedAttributes } from "pkijs";
 
 import { sha256 } from "./crypto-utils";
@@ -64,6 +64,7 @@ function bufToArrayBuffer(b: Buffer): ArrayBuffer {
  * Here we include: SHA-256 + certHash; omit issuerSerial/policies for brevity.
  */
 function buildSigningCertificateV2Value(certHash: Buffer): asn1js.Sequence {
+  // ASN.1js is required for custom ESSCertIDv2/SigningCertificateV2 structure (not natively supported by PKI.js)
   const hashAlgId = new asn1js.Sequence({
     value: [
       new asn1js.ObjectIdentifier({ value: "2.16.840.1.101.3.4.2.1" }), // id-sha256
