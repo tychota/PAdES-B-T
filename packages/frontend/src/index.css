@@ -3,18 +3,26 @@
   --primary-color: #2563eb;
   --primary-hover: #1d4ed8;
   --success-color: #16a34a;
+  --success-light: #dcfce7;
+  --success-border: #22c55e;
   --error-color: #dc2626;
+  --error-light: #fee2e2;
+  --error-border: #fecaca;
   --warning-color: #ca8a04;
+  --warning-light: #fef3c7;
   --secondary-color: #6b7280;
   --text-color: #1f2937;
   --text-muted: #6b7280;
+  --text-light: #9ca3af;
   --bg-color: #ffffff;
   --bg-secondary: #f8fafc;
   --bg-tertiary: #f1f5f9;
   --border-color: #e5e7eb;
   --border-radius: 8px;
+  --border-radius-lg: 12px;
   --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --transition: all 0.2s ease;
 }
 
 * {
@@ -65,8 +73,7 @@ body {
 }
 
 .status-card,
-.workflow-card,
-.workflow-section {
+.workflow-card {
   background: var(--bg-color);
   border-radius: var(--border-radius);
   padding: 1.5rem;
@@ -76,8 +83,7 @@ body {
 }
 
 .status-card h2,
-.workflow-card h2,
-.workflow-section h2 {
+.workflow-card h2 {
   margin-bottom: 1rem;
   color: var(--text-color);
   font-size: 1.25rem;
@@ -112,7 +118,7 @@ body {
   border-radius: var(--border-radius);
   cursor: pointer;
   font-size: 0.875rem;
-  transition: opacity 0.2s;
+  transition: var(--transition);
 }
 
 .error button:hover {
@@ -146,117 +152,416 @@ body {
 /* PDF Workflow Styles */
 .pdf-workflow {
   display: grid;
-  gap: 1.5rem;
+  gap: 2rem;
 }
 
-.config-form {
-  background: var(--bg-tertiary);
-  padding: 1.5rem;
-  border-radius: var(--border-radius);
-  margin: 1rem 0;
+/* Workflow Progress Styles - Jenkins Blue Ocean Inspired */
+.workflow-progress {
+  background: var(--bg-color);
+  border-radius: var(--border-radius-lg);
+  padding: 2rem;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border-color);
 }
 
-.config-form h3 {
-  margin-bottom: 1rem;
+.workflow-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.workflow-header h2 {
   color: var(--text-color);
-  font-size: 1.1rem;
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
 }
 
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 1rem;
+.workflow-header p {
+  color: var(--text-muted);
+  font-size: 1rem;
 }
 
-.form-group {
+.workflow-steps {
+  display: flex;
+  gap: 0;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 1rem;
+}
+
+.workflow-step {
   display: flex;
   flex-direction: column;
-  margin-bottom: 1rem;
+  align-items: center;
+  min-width: 200px;
+  position: relative;
+  flex-shrink: 0;
 }
 
-.form-group label {
+.workflow-step__indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  position: relative;
+  z-index: 2;
+  transition: var(--transition);
+}
+
+.workflow-step--pending .workflow-step__indicator {
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.workflow-step--current .workflow-step__indicator {
+  background: var(--primary-color);
+  border: 2px solid var(--primary-color);
+  color: white;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.2);
+  animation: pulse 2s infinite;
+}
+
+.workflow-step--completed .workflow-step__indicator {
+  background: var(--success-color);
+  border: 2px solid var(--success-color);
+  color: white;
+}
+
+.workflow-step__number {
+  font-size: 0.875rem;
+  font-weight: 600;
+  display: block;
+}
+
+.workflow-step__icon {
+  font-size: 1.5rem;
+  margin-top: 0.25rem;
+}
+
+.workflow-step__content {
+  text-align: center;
+  margin-top: 1rem;
+  max-width: 180px;
+}
+
+.workflow-step__title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-color);
+  margin-bottom: 0.5rem;
+}
+
+.workflow-step__description {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin-bottom: 0.5rem;
+}
+
+.workflow-step__status {
+  margin-top: 0.5rem;
+}
+
+.workflow-step__status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: var(--primary-color);
+  color: white;
+}
+
+.workflow-step__status-badge--completed {
+  background: var(--success-color);
+}
+
+.workflow-step__connector {
+  position: absolute;
+  top: 40px;
+  left: 80px;
+  width: 120px;
+  height: 2px;
+  z-index: 1;
+}
+
+.workflow-step__connector--completed,
+.workflow-step__connector--current {
+  background: var(--success-color);
+}
+
+.workflow-step__connector--pending {
+  background: var(--border-color);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(37, 99, 235, 0.1);
+  }
+}
+
+/* Workflow Content */
+.workflow-content {
+  background: var(--bg-color);
+  border-radius: var(--border-radius-lg);
+  padding: 2rem;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+}
+
+.step-content {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.step-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.step-header h3 {
+  color: var(--text-color);
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.step-header p {
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+
+/* Form Styles */
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-group--prominent {
+  margin-bottom: 2rem;
+}
+
+.form-label {
+  display: block;
   margin-bottom: 0.5rem;
   font-weight: 500;
   color: var(--text-color);
   font-size: 0.875rem;
 }
 
-.form-group input,
-.form-group select {
+.form-label--prominent {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.form-input {
+  width: 100%;
   padding: 0.75rem;
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
   background: var(--bg-color);
   color: var(--text-color);
   font-size: 0.875rem;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: var(--transition);
 }
 
-.form-group input:focus,
-.form-group select:focus {
+.form-input--prominent {
+  padding: 1rem;
+  font-size: 1rem;
+  border: 2px solid var(--border-color);
+}
+
+.form-input:focus,
+.form-input--prominent:focus {
   outline: none;
   border-color: var(--primary-color);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
-.form-group small {
-  margin-top: 0.25rem;
+.form-help {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
   font-size: 0.75rem;
   color: var(--text-muted);
 }
 
-.action-buttons {
-  display: flex;
-  gap: 1rem;
-  flex-wrap: wrap;
-  align-items: center;
-  margin-top: 1rem;
+.form-help__icon {
+  font-size: 0.875rem;
 }
 
-.file-upload-section,
-.download-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+.form-help__status {
+  color: var(--success-color);
+  font-weight: 500;
 }
 
-/* Signing Method Styles */
-.signing-method-section {
+/* Config Section */
+.config-section {
   background: var(--bg-tertiary);
   padding: 1.5rem;
   border-radius: var(--border-radius);
-  margin: 1rem 0;
+  margin-bottom: 2rem;
 }
 
-.signing-method-section h3 {
-  margin-bottom: 1rem;
+.config-section h4 {
   color: var(--text-color);
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
 }
 
-.method-buttons {
-  display: flex;
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 1rem;
-  flex-wrap: wrap;
 }
 
-.cps-section {
+/* Signing Method Cards */
+.signing-method-section {
+  margin-bottom: 2rem;
+}
+
+.signing-method-section h4 {
+  color: var(--text-color);
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.signing-method-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.signing-method-card {
+  display: flex;
+  align-items: center;
+  padding: 1.5rem;
+  border: 2px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  background: var(--bg-color);
+  cursor: pointer;
+  transition: var(--transition);
+  position: relative;
+}
+
+.signing-method-card:hover {
+  border-color: var(--primary-color);
+  box-shadow: var(--shadow-lg);
+}
+
+.signing-method-card--active {
+  border-color: var(--primary-color);
+  background: rgba(37, 99, 235, 0.05);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.signing-method-card__icon {
+  font-size: 2rem;
+  margin-right: 1rem;
+  flex-shrink: 0;
+}
+
+.signing-method-card__content {
+  flex: 1;
+}
+
+.signing-method-card__content h5 {
+  color: var(--text-color);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.signing-method-card__content p {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+}
+
+.signing-method-card__badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: var(--success-color);
+  color: white;
+}
+
+.signing-method-card__badge--test {
+  background: var(--warning-color);
+}
+
+/* CPS Configuration */
+.cps-configuration {
   background: var(--bg-secondary);
+  padding: 1.5rem;
+  border-radius: var(--border-radius-lg);
+  border: 1px solid var(--border-color);
+}
+
+.cps-configuration h4 {
+  color: var(--text-color);
+  font-size: 1.1rem;
+  margin-bottom: 1.5rem;
+}
+
+.cps-pin-section {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Mock HSM Info */
+.mock-hsm-info {
+  margin-top: 1rem;
+}
+
+.info-box {
+  display: flex;
+  align-items: center;
   padding: 1rem;
+  background: var(--warning-light);
+  border: 1px solid #fbbf24;
   border-radius: var(--border-radius);
-  margin: 1rem 0;
 }
 
-.success-section {
-  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
-  border-color: #22c55e;
-  border-width: 2px;
+.info-box__icon {
+  font-size: 1.5rem;
+  margin-right: 1rem;
+  flex-shrink: 0;
 }
 
-.completion-actions {
+.info-box__content h5 {
+  color: var(--text-color);
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.info-box__content p {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+/* Action Buttons */
+.action-buttons {
   display: flex;
   gap: 1rem;
+  justify-content: center;
   flex-wrap: wrap;
-  margin-top: 1rem;
+  margin-top: 2rem;
+}
+
+.file-upload-wrapper {
+  display: flex;
+  align-items: center;
 }
 
 /* Button Styles */
@@ -271,8 +576,21 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: var(--transition);
   min-height: 44px;
+  line-height: 1;
+}
+
+.btn-large {
+  padding: 1rem 2rem;
+  font-size: 1rem;
+  min-height: 52px;
+}
+
+.btn-small {
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  min-height: 32px;
 }
 
 .btn:disabled {
@@ -311,60 +629,152 @@ body {
   transform: translateY(-1px);
 }
 
-.btn-download {
-  background: var(--success-color);
-  color: white;
-}
-
-.btn-download:hover:not(:disabled) {
-  background: #15803d;
-}
-
-.btn-small {
-  padding: 0.5rem 1rem;
-  font-size: 0.75rem;
-  min-height: 32px;
-  background: var(--bg-secondary);
+.btn-outline {
+  background: transparent;
   color: var(--text-color);
   border: 1px solid var(--border-color);
 }
 
-.btn-small:hover:not(:disabled) {
+.btn-outline:hover:not(:disabled) {
   background: var(--bg-tertiary);
+  border-color: var(--secondary-color);
 }
 
-/* Status and Error Messages */
-.error-message {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: var(--error-color);
-  padding: 1rem;
-  border-radius: var(--border-radius);
-  margin: 1rem 0;
+/* Workflow Actions */
+.workflow-actions {
+  background: var(--bg-color);
+  border-radius: var(--border-radius-lg);
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
 }
 
-.pdf-status {
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  color: var(--success-color);
-  padding: 1rem;
-  border-radius: var(--border-radius);
-  margin: 1rem 0;
+.workflow-actions__content {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
   flex-wrap: wrap;
+}
+
+.workflow-actions__primary {
+  display: flex;
   gap: 1rem;
 }
 
-.status-info p {
-  margin: 0.25rem 0;
+/* Completion Section */
+.completion-section {
+  background: var(--success-light);
+  border: 2px solid var(--success-border);
+  border-radius: var(--border-radius-lg);
+  padding: 2rem;
+}
+
+.completion-content {
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.completion-header h3 {
+  color: var(--success-color);
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.completion-header p {
+  color: var(--text-muted);
+  font-size: 1rem;
+  margin-bottom: 2rem;
+}
+
+.completion-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* Error Display */
+.error-display {
+  background: var(--error-light);
+  border: 1px solid var(--error-border);
+  border-radius: var(--border-radius-lg);
+  padding: 1.5rem;
+  margin: 1rem 0;
+}
+
+.error-content {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.error-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.error-message h4 {
+  color: var(--error-color);
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.error-message p {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+/* PDF Status */
+.pdf-status-section {
+  background: var(--success-light);
+  border: 1px solid var(--success-border);
+  border-radius: var(--border-radius);
+  padding: 1rem;
+}
+
+.pdf-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.pdf-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.pdf-info__icon {
+  font-size: 2rem;
+  color: var(--success-color);
+}
+
+.pdf-info__details h4 {
+  color: var(--text-color);
+  font-size: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.pdf-info__details p {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.pdf-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 /* PDF Preview */
 .pdf-preview-section {
   background: var(--bg-color);
-  border-radius: var(--border-radius);
+  border-radius: var(--border-radius-lg);
   padding: 1.5rem;
   box-shadow: var(--shadow);
   border: 1px solid var(--border-color);
@@ -384,7 +794,7 @@ body {
 /* Logs Section */
 .logs-section {
   background: var(--bg-color);
-  border-radius: var(--border-radius);
+  border-radius: var(--border-radius-lg);
   padding: 1.5rem;
   box-shadow: var(--shadow);
   border: 1px solid var(--border-color);
@@ -492,6 +902,36 @@ body {
 }
 
 /* Responsive design */
+@media (max-width: 1024px) {
+  .workflow-steps {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .workflow-step {
+    min-width: auto;
+    width: 100%;
+    max-width: 300px;
+    flex-direction: row;
+    text-align: left;
+  }
+  
+  .workflow-step__content {
+    text-align: left;
+    margin-top: 0;
+    margin-left: 1rem;
+    max-width: none;
+  }
+  
+  .workflow-step__connector {
+    display: none;
+  }
+  
+  .signing-method-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 768px) {
   .app-header {
     padding: 1.5rem 1rem;
@@ -505,19 +945,22 @@ body {
     padding: 1rem;
   }
   
-  .status-card,
-  .workflow-card,
-  .workflow-section {
+  .workflow-content,
+  .workflow-progress {
     padding: 1rem;
   }
 
-  .form-grid {
+  .config-grid {
     grid-template-columns: 1fr;
   }
 
-  .action-buttons,
-  .method-buttons,
-  .completion-actions {
+  .workflow-actions__content {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .completion-actions,
+  .pdf-actions {
     flex-direction: column;
     align-items: stretch;
   }
@@ -532,24 +975,21 @@ body {
     gap: 0.5rem;
     align-items: flex-start;
   }
-}
-
-@media (min-width: 1024px) {
+  
   .workflow-steps {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .pdf-workflow {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (min-width: 1400px) {
-  .pdf-workflow {
-    grid-template-columns: 2fr 1fr;
+    gap: 1rem;
   }
   
-  .logs-section {
-    grid-column: 1 / -1;
+  .workflow-step {
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--bg-secondary);
+  }
+}
+
+@media (min-width: 1200px) {
+  .step-content {
+    max-width: 900px;
   }
 }
