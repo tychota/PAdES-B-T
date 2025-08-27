@@ -1,4 +1,4 @@
-/* Enhanced styling for the POC application */
+/* Enhanced styling with CSS Grid layout */
 :root {
   --primary-color: #2563eb;
   --primary-hover: #1d4ed8;
@@ -42,8 +42,8 @@ body {
 
 .app {
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
 }
 
 .app-header {
@@ -65,11 +65,13 @@ body {
 }
 
 .app-main {
-  flex: 1;
   padding: 2rem;
   max-width: 1400px;
   margin: 0 auto;
   width: 100%;
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: 1fr;
 }
 
 .status-card,
@@ -77,7 +79,6 @@ body {
   background: var(--bg-color);
   border-radius: var(--border-radius);
   padding: 1.5rem;
-  margin-bottom: 2rem;
   box-shadow: var(--shadow);
   border: 1px solid var(--border-color);
 }
@@ -149,64 +150,67 @@ body {
   font-size: 0.875rem;
 }
 
-/* PDF Workflow Styles */
+/* PDF Workflow Styles - CSS Grid Layout */
 .pdf-workflow {
   display: grid;
-  gap: 2rem;
+  gap: 1.5rem;
+  grid-template-columns: 1fr;
+  align-items: start;
 }
 
-/* Workflow Progress Styles - Jenkins Blue Ocean Inspired */
+/* Workflow Progress Styles - Compact for Better Alignment */
 .workflow-progress {
   background: var(--bg-color);
   border-radius: var(--border-radius-lg);
-  padding: 2rem;
+  padding: 1.5rem;
   box-shadow: var(--shadow-lg);
   border: 1px solid var(--border-color);
 }
 
-.workflow-header {
+.workflow-progress__header {
   text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
 
-.workflow-header h2 {
+.workflow-progress__header h2 {
   color: var(--text-color);
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   margin-bottom: 0.5rem;
 }
 
-.workflow-header p {
+.workflow-progress__header p {
   color: var(--text-muted);
-  font-size: 1rem;
+  font-size: 0.875rem;
 }
 
-.workflow-steps {
-  display: flex;
-  gap: 0;
-  align-items: flex-start;
-  overflow-x: auto;
-  padding-bottom: 1rem;
+.workflow-progress__steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+  align-items: start;
 }
 
 .workflow-step {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 200px;
+  text-align: center;
+  padding: 1rem 0.5rem;
   position: relative;
-  flex-shrink: 0;
 }
 
 .workflow-step__indicator {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 80px;
-  height: 80px;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
   position: relative;
   z-index: 2;
   transition: var(--transition);
+  margin-bottom: 0.75rem;
 }
 
 .workflow-step--pending .workflow-step__indicator {
@@ -230,45 +234,44 @@ body {
 }
 
 .workflow-step__number {
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  display: block;
+  line-height: 1;
 }
 
 .workflow-step__icon {
-  font-size: 1.5rem;
-  margin-top: 0.25rem;
+  font-size: 1.25rem;
+  margin-top: 0.125rem;
 }
 
 .workflow-step__content {
-  text-align: center;
-  margin-top: 1rem;
-  max-width: 180px;
+  max-width: 130px;
 }
 
 .workflow-step__title {
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-color);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
+  line-height: 1.2;
 }
 
 .workflow-step__description {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
-  line-height: 1.4;
+  line-height: 1.3;
   margin-bottom: 0.5rem;
 }
 
 .workflow-step__status {
-  margin-top: 0.5rem;
+  margin-top: 0.25rem;
 }
 
 .workflow-step__status-badge {
   display: inline-block;
-  padding: 0.25rem 0.75rem;
+  padding: 0.125rem 0.5rem;
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: 0.65rem;
   font-weight: 500;
   background: var(--primary-color);
   color: white;
@@ -279,21 +282,7 @@ body {
 }
 
 .workflow-step__connector {
-  position: absolute;
-  top: 40px;
-  left: 80px;
-  width: 120px;
-  height: 2px;
-  z-index: 1;
-}
-
-.workflow-step__connector--completed,
-.workflow-step__connector--current {
-  background: var(--success-color);
-}
-
-.workflow-step__connector--pending {
-  background: var(--border-color);
+  display: none; /* Hidden in grid layout */
 }
 
 @keyframes pulse {
@@ -701,7 +690,6 @@ body {
   border: 1px solid var(--error-border);
   border-radius: var(--border-radius-lg);
   padding: 1.5rem;
-  margin: 1rem 0;
 }
 
 .error-content {
@@ -902,36 +890,6 @@ body {
 }
 
 /* Responsive design */
-@media (max-width: 1024px) {
-  .workflow-steps {
-    flex-direction: column;
-    align-items: center;
-  }
-  
-  .workflow-step {
-    min-width: auto;
-    width: 100%;
-    max-width: 300px;
-    flex-direction: row;
-    text-align: left;
-  }
-  
-  .workflow-step__content {
-    text-align: left;
-    margin-top: 0;
-    margin-left: 1rem;
-    max-width: none;
-  }
-  
-  .workflow-step__connector {
-    display: none;
-  }
-  
-  .signing-method-cards {
-    grid-template-columns: 1fr;
-  }
-}
-
 @media (max-width: 768px) {
   .app-header {
     padding: 1.5rem 1rem;
@@ -975,16 +933,13 @@ body {
     gap: 0.5rem;
     align-items: flex-start;
   }
-  
-  .workflow-steps {
-    gap: 1rem;
+
+  .workflow-progress__steps {
+    grid-template-columns: repeat(3, 1fr);
   }
-  
-  .workflow-step {
-    padding: 1rem;
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius);
-    background: var(--bg-secondary);
+
+  .signing-method-cards {
+    grid-template-columns: 1fr;
   }
 }
 
