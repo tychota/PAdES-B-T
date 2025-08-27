@@ -9,6 +9,21 @@ export interface VerificationRequest {
   pdfBase64: string;
 }
 
+export interface CertificateChainInfo {
+  isValid: boolean;
+  chainLength: number;
+  trustedChain: boolean;
+  signerCertificate?: {
+    subject: string;
+    issuer: string;
+    validFrom: string;
+    validTo: string;
+    isValidNow: boolean;
+    keyUsage: string[];
+  };
+  reasons: string[];
+}
+
 export interface VerificationResult {
   isCryptographicallyValid: boolean;
   isPAdESCompliant: boolean;
@@ -21,6 +36,7 @@ export interface VerificationResult {
   chainTrusted?: boolean;
   certValidNow?: boolean;
   byteRange?: ByteRange;
+  certificateChain?: CertificateChainInfo;
 }
 
 export interface VerificationResponse extends BaseApiResponse {

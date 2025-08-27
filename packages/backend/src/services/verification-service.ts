@@ -1,8 +1,8 @@
 /**
  * PDF Signature Verification Service for PAdES-B-T
  *
- * Verifies CMS signatures in PDFs (PAdES) using PKI.js for parsing
- * and Node WebCrypto for the actual signature check.
+ * Verifies CMS signatures in PDFs (PAdES) using PKI.js for parsing,
+ * Node WebCrypto for signature verification, and comprehensive certificate chain validation.
  */
 
 // ── external / node
@@ -18,7 +18,8 @@ import {
   IssuerAndSerialNumber,
 } from "pkijs";
 
-// ── shared types (workspace)
+// ── internal services
+import { CertificateChainValidator } from "./certificate-chain-validator";
 import { PdfByteParser } from "./pdf/byte-parser";
 
 import type { LogEntry } from "@pades-poc/shared";
@@ -42,7 +43,25 @@ export interface VerificationResult {
   isPAdESCompliant: boolean;
   isTimestamped: boolean;
   signatureLevel: SignatureLevel;
+  signerCN?: string;
+  signingTime?: string;
+  timestampTime?: string;
   reasons: string[];
+  // Enhanced certificate information
+  certificateChain?: {
+    isValid: boolean;
+    chainLength: number;
+    trustedChain: boolean;
+    signerCertificate?: {
+      subject: string;
+      issuer: string;
+      validFrom: string;
+      validTo: string;
+      isValidNow: boolean;
+      keyUsage: string[];
+    };
+    reasons: string[];
+  };
 }
 
 export interface VerificationParams {
@@ -54,18 +73,22 @@ export interface VerificationServiceResult extends VerificationResult {
 }
 
 /**
- * Service for verifying PAdES-B-T signatures using PKI.js
+ * Service for verifying PAdES-B-T signatures using PKI.js with comprehensive certificate validation
  */
 export class VerificationService {
   private parser: PdfByteParser;
+  private chainValidator: CertificateChainValidator;
 
   constructor(fieldName = "Signature1") {
     this.parser = new PdfByteParser(fieldName);
+    this.chainValidator = new CertificateChainValidator({
+      checkValidityPeriod: true,
+      verifySignatures: true,
+      checkKeyUsage: true,
+      maxChainLength: 10,
+    });
   }
 
-  /**
-   * Verify a signed PDF document
-   */
   /**
    * Verify a signed PDF document.
    * Accepts either raw bytes (Buffer/Uint8Array/ArrayBuffer) or `{ pdfBase64 }`.
@@ -84,6 +107,14 @@ export class VerificationService {
             : new Uint8Array(Buffer.from(input.pdfBase64, "base64"));
 
     const reasons: string[] = [];
+
+    logs.push({
+      timestamp: new Date().toISOString(),
+      level: "info",
+      source: "backend",
+      message: "Starting PDF signature verification",
+      context: { pdfSize: pdfBytes.length },
+    });
 
     const { signedBytes, cms } = this.extractPdfSignature(pdfBytes);
     if (!cms) {
@@ -115,7 +146,53 @@ export class VerificationService {
     const signedData = new SignedData({ schema: contentInfo.content });
     const signerInfo = signedData.signerInfos[0];
 
-    // 1) ByteRange digest vs messageDigest (detect content modification)
+    // Find signer certificate
+    const signerCert = this.findSignerCertificate(signedData, signerInfo);
+    if (!signerCert) {
+      return {
+        isCryptographicallyValid: false,
+        isPAdESCompliant: false,
+        isTimestamped: false,
+        signatureLevel: "Unknown",
+        reasons: ["Signer certificate not found in CMS"],
+        logs,
+      };
+    }
+
+    // 1) Certificate Chain Validation (NEW)
+    let certificateChain: VerificationResult["certificateChain"];
+    const certificates = Array.isArray(signedData.certificates)
+      ? signedData.certificates.filter((cert): cert is Certificate => cert instanceof Certificate)
+      : [];
+
+    if (certificates.length > 0) {
+      const chainResult = await this.chainValidator.validateChain(certificates, signerCert, logs);
+      const signerCertInfo = chainResult.certificates[0]; // First cert is always the signer
+
+      certificateChain = {
+        isValid: chainResult.isValid,
+        chainLength: chainResult.chainLength,
+        trustedChain: chainResult.trustedChain,
+        signerCertificate: signerCertInfo
+          ? {
+              subject: signerCertInfo.subject,
+              issuer: signerCertInfo.issuer,
+              validFrom: signerCertInfo.validFrom.toISOString(),
+              validTo: signerCertInfo.validTo.toISOString(),
+              isValidNow: signerCertInfo.isValidNow,
+              keyUsage: signerCertInfo.keyUsage,
+            }
+          : undefined,
+        reasons: chainResult.reasons,
+      };
+
+      // Add chain validation failures to main reasons
+      if (!chainResult.isValid) {
+        reasons.push(...chainResult.reasons);
+      }
+    }
+
+    // 2) ByteRange digest vs messageDigest (detect content modification)
     const digestOid = signerInfo.digestAlgorithm.algorithmId;
     const digestName = oidToDigestName(digestOid) ?? "SHA-256";
 
@@ -138,8 +215,7 @@ export class VerificationService {
       }
     }
 
-    // 2) Signature verification (manual, deterministic)
-    //    Verify RSASSA-PKCS1-v1_5 over DER(SET OF Attribute) extracted from signerInfo.signedAttrs.
+    // 3) Signature verification (manual, deterministic)
     let signatureVerified = false;
     try {
       if (!signerInfo.signedAttrs) throw new Error("Missing signed attributes");
@@ -150,9 +226,6 @@ export class VerificationService {
       const attrsAB = attrsDer ?? new ArrayBuffer(0);
       // Extract raw signature bytes
       const sigBytes = new Uint8Array(signerInfo.signature.valueBlock.valueHexView);
-      // Pick signer certificate (prefer matching Issuer+Serial)
-      const signerCert = this.findSignerCertificate(signedData, signerInfo) ?? null;
-      if (!signerCert) throw new Error("Signer certificate not found in CMS");
       // Get WebCrypto public key
       const publicKey = await signerCert.getPublicKey({
         algorithm: {
@@ -177,19 +250,20 @@ export class VerificationService {
       });
     }
 
-    // 3) Timestamp presence (B-T detection). Full RFC3161 validation later.
+    // 4) Timestamp presence (B-T detection). Full RFC3161 validation later.
     const tsAttr = signerInfo.unsignedAttrs?.attributes.find(
       (a) => a.type === "1.2.840.113549.1.9.16.2.14", // id-aa-signatureTimeStampToken
     );
     const isTimestamped = Boolean(tsAttr);
 
-    // 4) Minimal PAdES-B-B compliance: detached CMS with contentType + messageDigest
+    // 5) Minimal PAdES-B-B compliance: detached CMS with contentType + messageDigest
     const hasContentType = Boolean(
       signerInfo.signedAttrs?.attributes.find(
         (a) => a.type === "1.2.840.113549.1.9.3", // contentType
       ),
     );
-    const isPAdESCompliant = signatureVerified && hasContentType && digestMatches;
+    const isPAdESCompliant =
+      signatureVerified && hasContentType && digestMatches && (certificateChain?.isValid ?? false);
 
     const signatureLevel: SignatureLevel = signatureVerified
       ? isTimestamped
@@ -197,12 +271,30 @@ export class VerificationService {
         : "B-B"
       : "Unknown";
 
+    const signerCN = this.getSubjectCN(signerCert);
+
+    logs.push({
+      timestamp: new Date().toISOString(),
+      level: isPAdESCompliant ? "success" : "warning",
+      source: "backend",
+      message: `PDF signature verification completed: ${isPAdESCompliant ? "VALID" : "INVALID"}`,
+      context: {
+        signatureLevel,
+        signatureVerified,
+        digestMatches,
+        chainValid: certificateChain?.isValid ?? false,
+        signerCN,
+      },
+    });
+
     return {
       isCryptographicallyValid: signatureVerified && digestMatches,
       isPAdESCompliant,
       isTimestamped,
       signatureLevel,
+      signerCN,
       reasons,
+      certificateChain,
       logs,
     };
   }
@@ -254,6 +346,18 @@ export class VerificationService {
     // fallback
     const first = sd.certificates[0];
     return first instanceof Certificate ? first : undefined;
+  }
+
+  /**
+   * Get subject CN from certificate
+   */
+  private getSubjectCN(cert: Certificate): string {
+    try {
+      const cn = cert.subject.typesAndValues.find((tv) => tv.type === "2.5.4.3");
+      return cn?.value.valueBlock.value || "Unknown";
+    } catch {
+      return "Unknown";
+    }
   }
 }
 
