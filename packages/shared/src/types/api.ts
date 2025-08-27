@@ -68,3 +68,8 @@ export interface MockSignResponse extends BaseApiResponse {
   certificateChainPem?: string[];
   signatureAlgorithmOid: string;
 }
+
+// DC Parameter endpoints
+export interface GetDcParameterResponse extends BaseApiResponse {
+  dcParameter: string;
+}

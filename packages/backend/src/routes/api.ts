@@ -538,6 +538,71 @@ router.post("/pdf/verify", async (req, res) => {
   }
 });
 
+router.get("/icanopee/dc-parameter", (req, res) => {
+  const workflowId = generateShortId();
+
+  const entry = padesBackendLogger.createLogEntry(
+    "info",
+    "backend",
+    "DC parameter requested for frontend Icanopee integration",
+    { workflowId },
+  );
+  logPAdES(entry);
+
+  try {
+    const dcParameter = process.env.ICANOPEE_DC_PARAMETER;
+
+    if (!dcParameter) {
+      const response = {
+        success: false,
+        error: {
+          code: "DC_PARAMETER_NOT_CONFIGURED",
+          message: "DC parameter not configured. Set ICANOPEE_DC_PARAMETER environment variable.",
+          timestamp: new Date().toISOString(),
+        },
+      };
+      res.status(500).json(response);
+      return;
+    }
+
+    const response = {
+      success: true,
+      dcParameter,
+    };
+
+    const successEntry = padesBackendLogger.createLogEntry(
+      "success",
+      "backend",
+      "DC parameter provided successfully for frontend",
+      { workflowId, parameterLength: dcParameter.length },
+    );
+    logPAdES(successEntry);
+
+    res.json(response);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    const errorEntry = padesBackendLogger.createLogEntry(
+      "error",
+      "backend",
+      `Failed to provide DC parameter: ${errorMessage}`,
+      { workflowId },
+    );
+    logPAdES(errorEntry);
+
+    const response = {
+      success: false,
+      error: {
+        code: "DC_PARAMETER_ERROR",
+        message: errorMessage,
+        timestamp: new Date().toISOString(),
+      },
+    };
+
+    res.status(500).json(response);
+  }
+});
+
 // Mock HSM signing endpoint (for development)
 router.post("/mock/sign", async (req, res) => {
   const { toBeSignedB64 } = req.body as { toBeSignedB64: string };
