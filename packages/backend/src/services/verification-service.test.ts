@@ -66,7 +66,6 @@ describe("VerificationService", () => {
 
       // Verify the signed PDF
       const verificationResult = await verificationService.verify(Buffer.from(signedPdf));
-      console.log(verificationResult);
 
       expect(verificationResult.isCryptographicallyValid).toBe(true);
       expect(verificationResult.isPAdESCompliant).toBe(true);
@@ -114,7 +113,6 @@ describe("VerificationService", () => {
 
       // Verify the signed PDF
       const verificationResult = await verificationService.verify(Buffer.from(signedPdf));
-      console.log(verificationResult);
 
       expect(verificationResult.isCryptographicallyValid).toBe(true);
       expect(verificationResult.isPAdESCompliant).toBe(true);
@@ -150,9 +148,14 @@ describe("VerificationService", () => {
       );
 
       // Modify PDF content after signing
+      // Modify a byte that is guaranteed to be within the first signed range
+      const text = Buffer.from(signedPdf).toString("latin1");
+      const m = /\/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/.exec(text)!;
+      const start1 = parseInt(m[1], 10);
+      const length1 = parseInt(m[2], 10);
+      const flipAt = start1 + Math.min(25, length1 - 1); // safe inside [start1, start1+length1)
       const modifiedPdf = Buffer.from(signedPdf);
-      // Change a byte in the content area (not in the signature)
-      modifiedPdf[100] = modifiedPdf[100] ^ 0xff;
+      modifiedPdf[flipAt] ^= 0xff;
 
       // Verify the modified PDF
       const verificationResult = await verificationService.verify(modifiedPdf);

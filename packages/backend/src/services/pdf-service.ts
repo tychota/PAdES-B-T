@@ -194,6 +194,9 @@ export class PDFService {
     // Locate placeholder areas using byte-level search
     const pos = this.parser.locateSignatureAreas(preparedBuffer, this.fieldName);
 
+    // write final ByteRange into the PDF *before* hashing
+    this.writeByteRange(preparedBuffer, pos.byteRangeArea, pos.byteRange);
+
     // Compute SHA-256 over the ByteRange
     const digest = this.computeDigest(preparedBuffer, pos.byteRange);
 
@@ -207,12 +210,13 @@ export class PDFService {
   /**
    * Embed CMS (DER) into the prepared PDF (in-place update of /Contents and /ByteRange).
    */
-  embedCmsIntoPdf(pdfBytes: Uint8Array, cmsDer: Uint8Array): Uint8Array {
+  embedCmsIntoPdf(
+    pdfBytes: Uint8Array,
+    cmsDer: Uint8Array,
+    expectedMessageDigestB64?: string,
+  ): Uint8Array {
     const buf = Buffer.from(pdfBytes);
-    const { byteRange, byteRangeArea, contentsArea } = this.parser.locateSignatureAreas(
-      buf,
-      this.fieldName,
-    );
+    const { byteRange, contentsArea } = this.parser.locateSignatureAreas(buf, this.fieldName);
 
     const cmsHex = Buffer.from(cmsDer).toString("hex").toUpperCase();
     const maxHex = contentsArea.end - contentsArea.start;
@@ -227,15 +231,13 @@ export class PDFService {
     buf.fill(0x30 /* '0' */, contentsArea.start, contentsArea.end);
     buf.write(cmsHex, contentsArea.start, "ascii");
 
-    // Rewrite /ByteRange [a b c d] within fixed-size area
-    const brText = `/ByteRange [${byteRange[0]} ${byteRange[1]} ${byteRange[2]} ${byteRange[3]}]`;
-    const brBytes = Buffer.from(brText, "ascii");
-    const brLen = byteRangeArea.end - byteRangeArea.start;
-    if (brBytes.length > brLen) {
-      throw new Error("ByteRange area too small to rewrite numbers");
+    // Optional guard: the signed bytes must not have changed
+    if (expectedMessageDigestB64) {
+      const rt = this.computeDigest(buf, byteRange);
+      if (!Buffer.from(rt).equals(Buffer.from(expectedMessageDigestB64, "base64"))) {
+        throw new Error("Prepared content changed between prepare and embed (digest mismatch).");
+      }
     }
-    buf.fill(0x20 /* space */, byteRangeArea.start, byteRangeArea.end);
-    brBytes.copy(buf, byteRangeArea.start);
 
     return new Uint8Array(buf);
   }
@@ -348,5 +350,19 @@ export class PDFService {
     const part1 = pdf.subarray(a, a + b);
     const part2 = pdf.subarray(c, c + d);
     return sha256(Buffer.concat([part1, part2]));
+  }
+
+  private writeByteRange(
+    buf: Uint8Array,
+    area: { start: number; end: number },
+    br: [number, number, number, number],
+  ) {
+    const brText = `/ByteRange [${br[0]} ${br[1]} ${br[2]} ${br[3]}]`;
+    // ASCII only → TextEncoder is fine
+    const brBytes = new TextEncoder().encode(brText);
+
+    // fill the whole fixed-size slot, then copy the text in
+    buf.fill(0x20 /* space */, area.start, area.end);
+    buf.set(brBytes, area.start);
   }
 }

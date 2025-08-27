@@ -122,6 +122,8 @@ export class VerificationService {
     const mdAttr = signerInfo.signedAttrs?.attributes.find(
       (a) => a.type === "1.2.840.113549.1.9.4", // messageDigest
     );
+
+    let digestMatches = true;
     if (mdAttr && mdAttr.values[0] instanceof asn1js.OctetString) {
       const expected = new Uint8Array(mdAttr.values[0].valueBlock.valueHexView);
       const dataAB = signedBytes.buffer.slice(
@@ -132,6 +134,7 @@ export class VerificationService {
       const computed = new Uint8Array(computedAB);
       if (!bytesEq(expected, computed)) {
         reasons.push("PDF content has been modified");
+        digestMatches = false;
       }
     }
 
@@ -152,7 +155,10 @@ export class VerificationService {
       if (!signerCert) throw new Error("Signer certificate not found in CMS");
       // Get WebCrypto public key
       const publicKey = await signerCert.getPublicKey({
-        algorithm: { algorithm: { name: "RSASSA-PKCS1-v1_5" }, usages: ["verify"] },
+        algorithm: {
+          algorithm: { name: "RSASSA-PKCS1-v1_5", hash: { name: "SHA-256" } },
+          usages: ["verify"],
+        },
       });
       signatureVerified = await nodeWebcrypto.subtle.verify(
         { name: "RSASSA-PKCS1-v1_5" },
@@ -183,8 +189,7 @@ export class VerificationService {
         (a) => a.type === "1.2.840.113549.1.9.3", // contentType
       ),
     );
-    const hasMessageDigest = Boolean(mdAttr);
-    const isPAdESCompliant = signatureVerified && hasContentType && hasMessageDigest;
+    const isPAdESCompliant = signatureVerified && hasContentType && digestMatches;
 
     const signatureLevel: SignatureLevel = signatureVerified
       ? isTimestamped
@@ -193,7 +198,7 @@ export class VerificationService {
       : "Unknown";
 
     return {
-      isCryptographicallyValid: signatureVerified && reasons.length === 0,
+      isCryptographicallyValid: signatureVerified && digestMatches,
       isPAdESCompliant,
       isTimestamped,
       signatureLevel,
