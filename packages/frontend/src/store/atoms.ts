@@ -1,71 +1,52 @@
-import { atom } from "jotai";
+// packages/frontend/src/store/atoms.ts
 
-import type { LogEntry, PDFSigningConfig, PcscReader } from "@pades-poc/shared";
+import { notifications } from "@mantine/notifications";
+import { atom, useAtomValue, useSetAtom } from "jotai";
 
-export type WorkflowStep =
-  | "upload"
-  | "prepare"
-  | "presign"
-  | "sign"
-  | "finalize"
-  | "verify"
-  | "completed";
-export type SigningMethod = "mock" | "cps";
+import { ApiClient } from "../services/api";
+import { IcanopeeService } from "../services/icanopee";
+
+import type { LogEntry, PcscReader, FinalizeRequest } from "@pades-poc/shared";
+
+// --- Base State Atoms ---
+export type WorkflowStep = "generate" | "preSign" | "sign" | "finalize" | "verify" | "completed";
 
 export interface WorkflowState {
   step: WorkflowStep;
-  pdfBase64: string;
-  preparedPdfBase64: string;
-  byteRange: [number, number, number, number];
-  messageDigestB64: string;
-  toBeSignedB64: string;
-  signedAttrsDerB64: string;
-  signatureB64: string;
-  signerCertPem: string;
-  signedPdfBase64: string;
+  pdfBase64: string | null;
+  preparedPdfBase64?: string;
+  byteRange?: [number, number, number, number];
+  messageDigestB64?: string;
+  toBeSignedB64?: string;
+  signedAttrsDerB64?: string;
+  signatureB64?: string;
+  signerCertPem?: string;
+  certificateChainPem?: string[];
+  signedPdfBase64: string | null;
 }
 
-export interface PDFMetadata {
-  size: number;
-  name: string;
-}
-
-// Core workflow state
 export const workflowStateAtom = atom<WorkflowState>({
-  step: "upload",
-  pdfBase64: "",
-  preparedPdfBase64: "",
-  byteRange: [0, 0, 0, 0],
-  messageDigestB64: "",
-  toBeSignedB64: "",
-  signedAttrsDerB64: "",
-  signatureB64: "",
-  signerCertPem: "",
-  signedPdfBase64: "",
+  step: "generate",
+  pdfBase64: null,
+  signedPdfBase64: null,
 });
 
-// PDF metadata
-export const pdfMetadataAtom = atom<PDFMetadata | null>(null);
-
-// Signing configuration
-export const signingConfigAtom = atom<PDFSigningConfig>({
-  signerName: "Dr. MARTIN Pierre",
-  reason: "ePrescription signature",
-  location: "France",
-});
-
-// UI state
+export const pdfFileAtom = atom<File | null>(null);
 export const loadingAtom = atom<boolean>(false);
-export const errorAtom = atom<string | null>(null);
 export const logsAtom = atom<LogEntry[]>([]);
-
-// CPS state
-export const signingMethodAtom = atom<SigningMethod>("cps");
+export const signingMethodAtom = atom<"mock" | "cps">("mock");
 export const pinAtom = atom<string>("");
 export const availableReadersAtom = atom<PcscReader[]>([]);
-export const selectedReaderAtom = atom<string>("");
+export const selectedReaderAtom = atom<string | null>(null);
+export const icanopeeStatusAtom = atom<"idle" | "loading" | "error">("idle");
+export const icanopeeErrorAtom = atom<string | null>(null);
 
-// Derived atoms
+// --- Derived State Atoms ---
+
+export const pdfBase64Atom = atom(
+  (get) => get(workflowStateAtom).signedPdfBase64 || get(workflowStateAtom).pdfBase64,
+);
+
 export const canProceedAtom = atom<boolean>((get) => {
   const state = get(workflowStateAtom);
   const signingMethod = get(signingMethodAtom);
@@ -73,21 +54,209 @@ export const canProceedAtom = atom<boolean>((get) => {
   const selectedReader = get(selectedReaderAtom);
 
   switch (state.step) {
-    case "upload":
+    case "generate":
+      // allow continue when a file is selected OR a base64 PDF already exists
+      return !!get(pdfFileAtom) || !!state.pdfBase64;
+    case "preSign":
+      // allow continue to run the prepare API when we have a PDF to prepare
       return !!state.pdfBase64;
-    case "prepare":
-      return !!state.pdfBase64; // Fix: check source PDF, not prepared PDF
-    case "presign":
-      return !!state.preparedPdfBase64 && !!state.messageDigestB64;
     case "sign":
-      return (
-        !!state.toBeSignedB64 && (signingMethod === "mock" || (pin.length >= 4 && !!selectedReader))
-      );
+      if (signingMethod === "mock") return !!state.messageDigestB64;
+      return !!state.messageDigestB64 && pin.length >= 4 && !!selectedReader;
     case "finalize":
-      return !!state.signatureB64;
+      // do NOT require signature yet—it's created when you click Continue
+      return (
+        !!state.preparedPdfBase64 &&
+        !!state.signedAttrsDerB64 &&
+        !!state.signerCertPem &&
+        Array.isArray(state.byteRange)
+      );
     case "verify":
       return !!state.signedPdfBase64;
     default:
       return false;
   }
 });
+
+// --- Action Hooks ---
+
+const addLogsAtom = atom(null, (_get, set, newLogs: LogEntry[]) => {
+  if (newLogs.length > 0) {
+    set(logsAtom, (prev) => [...prev, ...newLogs]);
+  }
+});
+
+export const useIcanopee = () => {
+  const setStatus = useSetAtom(icanopeeStatusAtom);
+  const setError = useSetAtom(icanopeeErrorAtom);
+  const setReaders = useSetAtom(availableReadersAtom);
+  const addLogs = useSetAtom(addLogsAtom);
+
+  const getReaders = async () => {
+    setStatus("loading");
+    setError(null);
+    try {
+      const icanopee = new IcanopeeService();
+      const logCallback = (level: LogEntry["level"], message: string) =>
+        addLogs([{ timestamp: new Date().toISOString(), level, source: "cps", message }]);
+
+      const readers = await icanopee.getReaders(logCallback);
+      const cpsReaders = readers.filter((r) => r.i_slotType === 3);
+      setReaders(cpsReaders);
+      if (cpsReaders.length === 0) {
+        throw new Error("No CPS card readers found.");
+      }
+      setStatus("idle");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Unknown Icanopee error";
+      setError(msg);
+      setStatus("error");
+    }
+  };
+  return {
+    getReaders,
+    status: useAtomValue(icanopeeStatusAtom),
+    error: useAtomValue(icanopeeErrorAtom),
+  };
+};
+
+export const useWorkflowActions = () => {
+  const setWorkflowState = useSetAtom(workflowStateAtom);
+  const setLoading = useSetAtom(loadingAtom);
+  const addLogs = useSetAtom(addLogsAtom);
+  const state = useAtomValue(workflowStateAtom);
+  const pdfFile = useAtomValue(pdfFileAtom);
+  const signingMethod = useAtomValue(signingMethodAtom);
+  const pin = useAtomValue(pinAtom);
+  const selectedReader = useAtomValue(selectedReaderAtom);
+
+  const apiClient = new ApiClient();
+  const icanopee = new IcanopeeService();
+
+  const handleApiResponse = (response: { logs?: LogEntry[] }, successMessage: string) => {
+    if (response.logs) addLogs(response.logs);
+    notifications.show({ title: "Success", message: successMessage, color: "green" });
+  };
+
+  const handleError = (err: unknown, step: string) => {
+    const message =
+      err instanceof Error ? err.message : `An unknown error occurred during ${step}.`;
+    notifications.show({ title: "Error", message, color: "red" });
+    addLogs([{ timestamp: new Date().toISOString(), level: "error", source: "frontend", message }]);
+  };
+
+  const fileToBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve((reader.result as string).split(",")[1]);
+      reader.onerror = () => {
+        const e = reader.error;
+        if (e instanceof Error) {
+          reject(e);
+        } else {
+          // DOMException or unknown error - provide a generic message
+          reject(new Error("Failed to read file."));
+        }
+      };
+    });
+
+  const generateDemoPDF = async () => {
+    setLoading(true);
+    try {
+      const response = await apiClient.generateDemoPDF({ config: {} });
+      handleApiResponse(response, "Demo PDF generated successfully.");
+      setWorkflowState({ step: "preSign", pdfBase64: response.pdfBase64, signedPdfBase64: null });
+    } catch (e) {
+      handleError(e, "PDF generation");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runCurrentStep = async () => {
+    setLoading(true);
+    try {
+      switch (state.step) {
+        case "generate": {
+          if (!pdfFile) throw new Error("No PDF file selected.");
+          const base64 = await fileToBase64(pdfFile);
+          setWorkflowState({ ...state, step: "preSign", pdfBase64: base64 });
+          break;
+        }
+
+        case "preSign": {
+          if (!state.pdfBase64) throw new Error("Missing PDF content.");
+          const prepRes = await apiClient.preparePDF({ pdfBase64: state.pdfBase64, config: {} });
+          handleApiResponse(prepRes, "PDF prepared for signing.");
+          setWorkflowState({ ...state, ...prepRes, step: "sign" });
+          break;
+        }
+
+        case "sign": {
+          let certRes: { signerCertPem?: string; certificateChainPem?: string[] } = {};
+          if (signingMethod === "mock") {
+            certRes = await apiClient.getMockCert();
+          } else {
+            if (!selectedReader) throw new Error("No CPS reader selected.");
+            const card = await icanopee.readCard(selectedReader, pin);
+            certRes = { signerCertPem: card.certificate, certificateChainPem: [] };
+          }
+          if (!certRes.signerCertPem) throw new Error("Could not retrieve signer certificate.");
+          const presignRes = await apiClient.presignPDF({
+            messageDigestB64: state.messageDigestB64!,
+            signerCertPem: certRes.signerCertPem,
+          });
+          handleApiResponse(presignRes, "Pre-sign complete.");
+          setWorkflowState({ ...state, ...presignRes, ...certRes, step: "finalize" });
+          break;
+        }
+
+        case "finalize": {
+          let sigRes = { signatureB64: "" };
+          if (signingMethod === "mock") {
+            sigRes = await apiClient.mockSign(state.toBeSignedB64!);
+          } else {
+            if (!selectedReader) throw new Error("No CPS reader selected.");
+            const { signature } = await icanopee.signWithCard(
+              selectedReader,
+              pin,
+              state.toBeSignedB64!,
+            );
+            sigRes = { signatureB64: signature };
+          }
+
+          const finalizeRequest: FinalizeRequest = {
+            preparedPdfBase64: state.preparedPdfBase64!,
+            byteRange: state.byteRange!,
+            signedAttrsDerB64: state.signedAttrsDerB64!,
+            signatureB64: sigRes.signatureB64,
+            signerCertPem: state.signerCertPem!,
+            certificateChainPem: state.certificateChainPem,
+          };
+          const finalizeRes = await apiClient.finalizePDF(finalizeRequest);
+          handleApiResponse(finalizeRes, "PDF finalized and timestamped.");
+          setWorkflowState({
+            ...state,
+            signedPdfBase64: finalizeRes.signedPdfBase64,
+            step: "verify",
+          });
+          break;
+        }
+
+        case "verify": {
+          const verifyRes = await apiClient.verifyPDF({ pdfBase64: state.signedPdfBase64! });
+          handleApiResponse(verifyRes, "Verification complete.");
+          setWorkflowState({ ...state, step: "completed" });
+          break;
+        }
+      }
+    } catch (e) {
+      handleError(e, state.step);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return { generateDemoPDF, runCurrentStep };
+};

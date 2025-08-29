@@ -2,7 +2,7 @@
  * API request and response types for the three-step signing process
  */
 
-import type { BaseApiResponse } from "./common";
+import type { BaseApiResponse, LogEntry } from "./common";
 import type { ByteRange, PDFSigningConfig } from "./pdf";
 
 // Health check
@@ -11,6 +11,7 @@ export interface HealthResponse extends BaseApiResponse {
   timestamp: string;
   service: string;
   version: string;
+  logs?: LogEntry[];
 }
 
 // Step 1: Prepare PDF for signing

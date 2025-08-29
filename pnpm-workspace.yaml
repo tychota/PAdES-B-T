@@ -4,6 +4,7 @@ packages:
 link-workspace-packages: deep
 
 onlyBuiltDependencies:
+  - canvas
   - esbuild
   - unrs-resolver
 

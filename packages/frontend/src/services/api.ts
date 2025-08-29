@@ -13,22 +13,23 @@ import type {
   GenerateDemoPDFRequest,
   GenerateDemoPDFResponse,
   MockSignResponse,
-  BaseApiResponse,
   PAdESError,
+  LogEntry,
 } from "@pades-poc/shared";
 
 interface ApiErrorResponse {
   error: PAdESError;
+  logs?: LogEntry[];
 }
 
 export class ApiRequestError extends Error {
   public requestBody?: unknown;
-  constructor(message: string, requestBody?: unknown) {
+  public logs?: LogEntry[];
+  constructor(message: string, requestBody?: unknown, logs?: LogEntry[]) {
     super(message);
     this.name = "ApiRequestError";
-    if (requestBody !== undefined) {
-      this.requestBody = requestBody;
-    }
+    if (requestBody !== undefined) this.requestBody = requestBody;
+    if (logs) this.logs = logs;
   }
 }
 
@@ -38,13 +39,10 @@ export class ApiClient {
   constructor(baseURL: string = "/api") {
     this.client = axios.create({
       baseURL,
-      timeout: 30000, // 30 second timeout for signature operations
-      headers: {
-        "Content-Type": "application/json",
-      },
+      timeout: 30000,
+      headers: { "Content-Type": "application/json" },
     });
 
-    // Request interceptor for logging
     this.client.interceptors.request.use(
       (config) => {
         const method = config.method?.toUpperCase() ?? "UNKNOWN";
@@ -58,18 +56,19 @@ export class ApiClient {
       },
     );
 
-    // Response interceptor for error handling
     this.client.interceptors.response.use(
       (response) => response,
       (error: unknown) => {
         if (this.isAxiosError(error) && error.response?.data) {
           const responseData = error.response.data as ApiErrorResponse;
           const apiError = responseData.error;
-          // Attach request body if available
           const requestBody: unknown = error.config?.data;
-          throw new ApiRequestError(`[${apiError.code}] ${apiError.message}`, requestBody);
+          throw new ApiRequestError(
+            `[${apiError.code}] ${apiError.message}`,
+            requestBody,
+            responseData.logs,
+          );
         }
-        // Attach request body if available for generic errors
         if (this.isAxiosError(error) && error.config?.data !== undefined) {
           throw new ApiRequestError("API request failed", error.config.data as unknown);
         }
@@ -82,73 +81,67 @@ export class ApiClient {
     return axios.isAxiosError(error);
   }
 
-  // Health check
-  async checkHealth(): Promise<HealthResponse> {
-    const response: AxiosResponse<HealthResponse> = await this.client.get("/health");
+  async checkHealth(): Promise<HealthResponse & { logs?: LogEntry[] }> {
+    const response: AxiosResponse<HealthResponse & { logs?: LogEntry[] }> =
+      await this.client.get("/health");
     return response.data;
   }
 
-  // Generate demo PDF
-  async generateDemoPDF(request: GenerateDemoPDFRequest): Promise<GenerateDemoPDFResponse> {
-    const response: AxiosResponse<GenerateDemoPDFResponse> = await this.client.post(
-      "/pdf/generate",
-      request,
-    );
+  async generateDemoPDF(
+    request: GenerateDemoPDFRequest,
+  ): Promise<GenerateDemoPDFResponse & { logs?: LogEntry[] }> {
+    const response: AxiosResponse<GenerateDemoPDFResponse & { logs?: LogEntry[] }> =
+      await this.client.post("/pdf/generate", request);
     return response.data;
   }
 
-  // Step 1: Prepare PDF
-  async preparePDF(request: PrepareRequest): Promise<PrepareResponse> {
-    const response: AxiosResponse<PrepareResponse> = await this.client.post(
+  async preparePDF(request: PrepareRequest): Promise<PrepareResponse & { logs?: LogEntry[] }> {
+    const response: AxiosResponse<PrepareResponse & { logs?: LogEntry[] }> = await this.client.post(
       "/pdf/prepare",
       request,
     );
     return response.data;
   }
 
-  // Step 2: Pre-sign
-  async presignPDF(request: PresignRequest): Promise<PresignResponse> {
-    const response: AxiosResponse<PresignResponse> = await this.client.post(
+  async presignPDF(request: PresignRequest): Promise<PresignResponse & { logs?: LogEntry[] }> {
+    const response: AxiosResponse<PresignResponse & { logs?: LogEntry[] }> = await this.client.post(
       "/pdf/presign",
       request,
     );
     return response.data;
   }
 
-  // Step 3: Finalize
-  async finalizePDF(request: FinalizeRequest): Promise<FinalizeResponse> {
-    const response: AxiosResponse<FinalizeResponse> = await this.client.post(
-      "/pdf/finalize",
-      request,
-    );
+  async finalizePDF(request: FinalizeRequest): Promise<FinalizeResponse & { logs?: LogEntry[] }> {
+    const response: AxiosResponse<FinalizeResponse & { logs?: LogEntry[] }> =
+      await this.client.post("/pdf/finalize", request);
     return response.data;
   }
 
-  // Verify signed PDF
-  async verifyPDF(request: VerificationRequest): Promise<VerificationResponse> {
-    const response: AxiosResponse<VerificationResponse> = await this.client.post(
-      "/pdf/verify",
-      request,
-    );
+  async verifyPDF(
+    request: VerificationRequest,
+  ): Promise<VerificationResponse & { logs?: LogEntry[] }> {
+    const response: AxiosResponse<VerificationResponse & { logs?: LogEntry[] }> =
+      await this.client.post("/pdf/verify", request);
     return response.data;
   }
 
-  // Mock HSM signing
-  async mockSign(toBeSignedB64: string): Promise<MockSignResponse> {
-    const response: AxiosResponse<MockSignResponse> = await this.client.post("/mock/sign", {
-      toBeSignedB64,
-    });
+  async mockSign(toBeSignedB64: string): Promise<MockSignResponse & { logs?: LogEntry[] }> {
+    const response: AxiosResponse<MockSignResponse & { logs?: LogEntry[] }> =
+      await this.client.post("/mock/sign", { toBeSignedB64 });
     return response.data;
   }
 
-  // CPS card operations
-  async getCPSReaders(): Promise<BaseApiResponse> {
-    const response: AxiosResponse<BaseApiResponse> = await this.client.post("/cps/readers");
-    return response.data;
-  }
-
-  async signWithCPS(data: Record<string, unknown>): Promise<BaseApiResponse> {
-    const response: AxiosResponse<BaseApiResponse> = await this.client.post("/cps/sign", data);
+  // NEW: fetch mock certificate/chain (optional, supports your new /mock/cert endpoint)
+  async getMockCert(): Promise<{
+    success: boolean;
+    signerCertPem?: string;
+    certificateChainPem?: string[];
+  }> {
+    const response: AxiosResponse<{
+      success: boolean;
+      signerCertPem?: string;
+      certificateChainPem?: string[];
+    }> = await this.client.get("/mock/cert");
     return response.data;
   }
 }

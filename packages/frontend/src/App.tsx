@@ -1,113 +1,66 @@
-import React, { useState, useEffect, JSX } from "react";
+import { AppShell, Group, Badge, MantineProvider, Title, createTheme } from "@mantine/core";
+import { Notifications } from "@mantine/notifications";
+import { IconHeartbeat } from "@tabler/icons-react";
+import { useState, useEffect } from "react";
 
 import { PDFWorkflow } from "./components/PDFWorkflow";
+import { SigningMethodToggle } from "./components/SigningMethodToggle";
 import { ApiClient } from "./services/api";
+import "@mantine/core/styles.css";
+import "@mantine/notifications/styles.css";
 
-import type { HealthResponse } from "@pades-poc/shared";
+const theme = createTheme({
+  fontFamily: "Inter, sans-serif",
+  primaryColor: "blue",
+});
 
-function App(): JSX.Element {
-  const apiClient = new ApiClient();
-  const [healthStatus, setHealthStatus] = useState<HealthResponse | null>(null);
+function App() {
+  const [serverOk, setServerOk] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void checkHealthStatus();
+    const apiClient = new ApiClient();
+    apiClient
+      .checkHealth()
+      .then((response) => setServerOk(response.success && response.status === "OK"))
+      .catch(() => setServerOk(false))
+      .finally(() => setLoading(false));
   }, []);
 
-  const checkHealthStatus = async (): Promise<void> => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await apiClient.checkHealth();
-      setHealthStatus(response);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Connection failed";
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
+  const getStatus = () => {
+    if (loading) return { label: "Checking...", color: "blue" };
+    if (serverOk) return { label: "OK", color: "green" };
+    return { label: "Error", color: "red" };
   };
 
-  const handleRetryConnection = (): void => {
-    void checkHealthStatus();
-  };
+  const status = getStatus();
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>PAdES-B-T ePrescription POC</h1>
-        <p>ETSI EN 319 142-1 compliant signatures for French healthcare ePrescriptions</p>
-      </header>
+    <MantineProvider theme={theme} defaultColorScheme="light">
+      <Notifications />
+      <AppShell header={{ height: 60 }} padding="md">
+        <AppShell.Header>
+          <Group h="100%" px="md" justify="space-between">
+            <Group>
+              <Title order={3}>PAdES POC</Title>
+              <SigningMethodToggle />
+            </Group>
+            <Badge
+              size="lg"
+              variant="light"
+              color={status.color}
+              leftSection={<IconHeartbeat size={16} />}
+            >
+              Server status: {status.label}
+            </Badge>
+          </Group>
+        </AppShell.Header>
 
-      <main className="app-main">
-        {/* Backend Status */}
-        <div className="status-card">
-          <h2>État du backend</h2>
-          {loading && <p>Vérification de la connexion...</p>}
-          {error && (
-            <div className="error">
-              <p>❌ Échec de la connexion: {error}</p>
-              <button onClick={handleRetryConnection} type="button">
-                Réessayer la connexion
-              </button>
-            </div>
-          )}
-          {healthStatus && (
-            <div className="success">
-              <p>✅ {healthStatus.service} is running</p>
-              <div className="status-details">
-                <span>Version: {healthStatus.version}</span>
-                <span>Status: {healthStatus.status}</span>
-                <span>
-                  Dernière vérification: {new Date(healthStatus.timestamp).toLocaleString("fr-FR")}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* PDF Workflow - Only show when backend is healthy */}
-        {healthStatus && <PDFWorkflow apiClient={apiClient} />}
-
-        {/* Next Steps Preview - Show when no healthy backend */}
-        {!healthStatus && (
-          <div className="workflow-card">
-            <h2>Workflow de signature</h2>
-            <p>
-              Le workflow de signature PAdES-B-T sera disponible une fois que les services backend
-              seront opérationnels.
-            </p>
-            <div className="workflow-steps">
-              <div className="step">
-                <h3>1. Générer/Charger PDF</h3>
-                <p>Créer une ePrescription de démonstration ou charger un PDF existant</p>
-              </div>
-              <div className="step">
-                <h3>2. Préparer pour signature</h3>
-                <p>Calculer ByteRange et condensé du message</p>
-              </div>
-              <div className="step">
-                <h3>3. Signer avec CPS/Mock HSM</h3>
-                <p>Signature externe avec carte CPS ou Mock HSM</p>
-              </div>
-              <div className="step">
-                <h3>4. Finaliser & Horodatage</h3>
-                <p>Assembler le CMS avec horodatage (PAdES-B-T)</p>
-              </div>
-              <div className="step">
-                <h3>5. Vérifier la signature</h3>
-                <p>Valider l'intégrité cryptographique et la conformité</p>
-              </div>
-            </div>
-          </div>
-        )}
-      </main>
-
-      <footer className="app-footer">
-        <p>PAdES-B-T POC - Signatures électroniques conformes aux standards</p>
-      </footer>
-    </div>
+        <AppShell.Main>
+          <PDFWorkflow />
+        </AppShell.Main>
+      </AppShell>
+    </MantineProvider>
   );
 }
 

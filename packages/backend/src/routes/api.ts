@@ -1,3 +1,4 @@
+// packages/backend/src/routes/api.ts
 import { generateShortId } from "@pades-poc/shared";
 import { Router } from "express";
 
@@ -23,6 +24,7 @@ import type {
   GenerateDemoPDFResponse,
   MockSignResponse,
   LogEntry,
+  BaseApiResponse,
 } from "@pades-poc/shared";
 
 export const router = Router();
@@ -33,46 +35,48 @@ const mockHSM = new MockHSMService();
 const signatureService = new SignatureService();
 const cmsService = new CMSService();
 
-// Initialize Mock HSM in background
+// Init Mock HSM
 void mockHSM.ready
   .then(() => {
-    const entry = padesBackendLogger.createLogEntry(
-      "success",
-      "backend",
-      "Mock HSM service initialized and ready for use",
-    );
-    logPAdES(entry);
+    const e = padesBackendLogger.createLogEntry("success", "backend", "Mock HSM ready");
+    logPAdES(e);
   })
   .catch((error) => {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    const entry = padesBackendLogger.createLogEntry(
+    const e = padesBackendLogger.createLogEntry(
       "error",
       "backend",
-      `Mock HSM initialization failed: ${errorMessage}`,
+      `Mock HSM init failed: ${error instanceof Error ? error.message : "Unknown error"}`,
     );
-    logPAdES(entry);
+    logPAdES(e);
   });
 
-// Health check endpoint
-router.get("/health", (req, res) => {
-  // Check if Mock HSM is ready
-  const mockHSMReady = mockHSM.isInitialized();
+// Helper to both log and collect entries
+const pushAndLog = (logs: LogEntry[], entry: LogEntry): void => {
+  logs.push(entry);
+  logPAdES(entry);
+};
 
-  const response: HealthResponse = {
+// Health
+router.get("/health", (req, res) => {
+  const logs: LogEntry[] = [];
+  const workflowId = generateShortId();
+
+  const info = padesBackendLogger.createLogEntry("info", "backend", "Health check requested", {
+    ip: req.ip,
+    ua: req.get("User-Agent"),
+    mockHSMReady: mockHSM.isInitialized(),
+    workflowId,
+  });
+  pushAndLog(logs, info);
+
+  const response: HealthResponse & { logs: LogEntry[] } = {
     success: true,
     status: "OK",
     timestamp: new Date().toISOString(),
     service: "PAdES-B-T Signature Service",
     version: "1.0.0",
+    logs,
   };
-
-  const entry = padesBackendLogger.createLogEntry("info", "backend", "Health check requested", {
-    ip: req.ip,
-    userAgent: req.get("User-Agent"),
-    mockHSMReady,
-  });
-  logPAdES(entry);
-
   res.json(response);
 });
 
@@ -80,8 +84,9 @@ router.get("/health", (req, res) => {
 router.post("/pdf/generate", async (req, res) => {
   const request = req.body as GenerateDemoPDFRequest;
   const workflowId = generateShortId();
+  const logs: LogEntry[] = [];
 
-  const entry = padesBackendLogger.logWorkflowStep(
+  const start = padesBackendLogger.logWorkflowStep(
     "info",
     "backend",
     "prepare",
@@ -89,149 +94,147 @@ router.post("/pdf/generate", async (req, res) => {
     workflowId,
     { config: request.config },
   );
-  logPAdES(entry);
+  pushAndLog(logs, start);
 
   try {
     const result = await pdfService.generateDemoPDF(request.config);
 
-    const successEntry = padesBackendLogger.logWorkflowStep(
+    const ok = padesBackendLogger.logWorkflowStep(
       "success",
       "backend",
       "prepare",
-      "Demo PDF generated successfully",
+      "Demo PDF generated",
       workflowId,
-      {
-        pdfSize: result.metadata.size,
-        pageCount: result.metadata.pageCount,
-      },
+      { pdfSize: result.metadata.size, pageCount: result.metadata.pageCount },
     );
-    logPAdES(successEntry);
+    pushAndLog(logs, ok);
 
-    const response: GenerateDemoPDFResponse = {
+    const response: GenerateDemoPDFResponse & { logs: LogEntry[] } = {
       success: true,
       pdfBase64: result.pdfBase64,
+      logs,
     };
-
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-    const errorEntry = padesBackendLogger.logWorkflowStep(
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    const err = padesBackendLogger.logWorkflowStep(
       "error",
       "backend",
       "prepare",
-      `Demo PDF generation failed: ${errorMessage}`,
+      `Demo PDF generation failed: ${msg}`,
       workflowId,
     );
-    logPAdES(errorEntry);
+    pushAndLog(logs, err);
 
-    const response: GenerateDemoPDFResponse = {
+    const response: GenerateDemoPDFResponse & { logs: LogEntry[] } = {
       success: false,
       error: {
         code: "PDF_GENERATION_FAILED",
-        message: errorMessage,
+        message: msg,
         timestamp: new Date().toISOString(),
       },
       pdfBase64: "",
+      logs,
     };
-
     res.status(500).json(response);
   }
 });
 
-// Step 1: Prepare PDF for signing
+// Prepare
 router.post("/pdf/prepare", async (req, res) => {
   const request = req.body as PrepareRequest;
   const workflowId = generateShortId();
-  const pdfSize = Buffer.from(request.pdfBase64 || "", "base64").length;
+  const logs: LogEntry[] = [];
 
-  const entry = padesBackendLogger.logWorkflowStep(
-    "info",
-    "backend",
-    "prepare",
-    "PDF prepare requested",
-    workflowId,
-    {
-      configPresent: !!request.config,
-      pdfSize,
-    },
+  const pdfSize = Buffer.from(request.pdfBase64 || "", "base64").length;
+  pushAndLog(
+    logs,
+    padesBackendLogger.logWorkflowStep(
+      "info",
+      "backend",
+      "prepare",
+      "PDF prepare requested",
+      workflowId,
+      { configPresent: !!request.config, pdfSize },
+    ),
   );
-  logPAdES(entry);
 
   try {
     const result = await pdfService.preparePDF(request.pdfBase64, request.config);
 
-    const successEntry = padesBackendLogger.logWorkflowStep(
-      "success",
-      "backend",
-      "prepare",
-      "PDF prepared successfully",
-      workflowId,
-      {
-        preparedSize: Buffer.from(result.preparedPdfBase64, "base64").length,
-        byteRange: result.byteRange,
-      },
+    pushAndLog(
+      logs,
+      padesBackendLogger.logWorkflowStep(
+        "success",
+        "backend",
+        "prepare",
+        "PDF prepared",
+        workflowId,
+        {
+          preparedSize: Buffer.from(result.preparedPdfBase64, "base64").length,
+          byteRange: result.byteRange,
+        },
+      ),
     );
-    logPAdES(successEntry);
 
-    const response: PrepareResponse = {
+    const response: PrepareResponse & { logs: LogEntry[] } = {
       success: true,
       preparedPdfBase64: result.preparedPdfBase64,
       byteRange: result.byteRange,
       messageDigestB64: result.messageDigestB64,
+      logs,
     };
-
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-    const errorEntry = padesBackendLogger.logWorkflowStep(
-      "error",
-      "backend",
-      "prepare",
-      `PDF preparation failed: ${errorMessage}`,
-      workflowId,
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    pushAndLog(
+      logs,
+      padesBackendLogger.logWorkflowStep(
+        "error",
+        "backend",
+        "prepare",
+        `PDF preparation failed: ${msg}`,
+        workflowId,
+      ),
     );
-    logPAdES(errorEntry);
 
-    const response: PrepareResponse = {
+    const response: PrepareResponse & { logs: LogEntry[] } = {
       success: false,
       error: {
         code: "PDF_PREPARATION_FAILED",
-        message: errorMessage,
+        message: msg,
         timestamp: new Date().toISOString(),
       },
       preparedPdfBase64: "",
       byteRange: [0, 0, 0, 0],
       messageDigestB64: "",
+      logs,
     };
-
     res.status(500).json(response);
   }
 });
 
-// Step 2: Pre-sign (build signed attributes)
+// Presign
 router.post("/pdf/presign", (req, res) => {
   const request = req.body as PresignRequest;
   const workflowId = generateShortId();
+  const logs: LogEntry[] = [];
 
-  const entry = padesBackendLogger.logWorkflowStep(
-    "info",
-    "backend",
-    "presign",
-    "PDF presign requested",
-    workflowId,
-    {
-      messageDigestPresent: !!request.messageDigestB64,
-      certPresent: !!request.signerCertPem,
-    },
+  pushAndLog(
+    logs,
+    padesBackendLogger.logWorkflowStep(
+      "info",
+      "backend",
+      "presign",
+      "PDF presign requested",
+      workflowId,
+      { messageDigestPresent: !!request.messageDigestB64, certPresent: !!request.signerCertPem },
+    ),
   );
-  logPAdES(entry);
 
   try {
-    // Validate required parameters
     if (!request.messageDigestB64) {
-      const response: PresignResponse = {
+      const response: PresignResponse & { logs: LogEntry[] } = {
         success: false,
         error: {
           code: "MISSING_PARAMETER",
@@ -240,13 +243,14 @@ router.post("/pdf/presign", (req, res) => {
         },
         toBeSignedB64: "",
         signedAttrsDerB64: "",
+        logs,
       };
       res.status(400).json(response);
       return;
     }
 
     if (!request.signerCertPem) {
-      const response: PresignResponse = {
+      const response: PresignResponse & { logs: LogEntry[] } = {
         success: false,
         error: {
           code: "MISSING_PARAMETER",
@@ -255,98 +259,96 @@ router.post("/pdf/presign", (req, res) => {
         },
         toBeSignedB64: "",
         signedAttrsDerB64: "",
+        logs,
       };
       res.status(400).json(response);
       return;
     }
 
-    // Decode message digest
     const messageDigest = fromBase64(request.messageDigestB64);
 
-    // Build signed attributes
-    const logs: LogEntry[] = [];
+    const serviceLogs: LogEntry[] = [];
     const result = signatureService.buildSignedAttributes(
-      {
-        messageDigest,
-        signerCertPem: request.signerCertPem,
-      },
+      { messageDigest, signerCertPem: request.signerCertPem },
+      serviceLogs,
+    );
+
+    serviceLogs.forEach((l) => pushAndLog(logs, l));
+
+    pushAndLog(
       logs,
+      padesBackendLogger.logWorkflowStep(
+        "success",
+        "backend",
+        "presign",
+        "Signed attributes built",
+        workflowId,
+        { derSize: result.signedAttrsDer.length, hashSize: result.toBeSignedHash.length },
+      ),
     );
 
-    // Log any debug information from the service
-    logs.forEach((log) => logPAdES(log));
-
-    const successEntry = padesBackendLogger.logWorkflowStep(
-      "success",
-      "backend",
-      "presign",
-      "Signed attributes built successfully",
-      workflowId,
-      {
-        derSize: result.signedAttrsDer.length,
-        hashSize: result.toBeSignedHash.length,
-      },
-    );
-    logPAdES(successEntry);
-
-    const response: PresignResponse = {
+    const response: PresignResponse & { logs: LogEntry[] } = {
       success: true,
       toBeSignedB64: toBase64(result.toBeSignedHash),
       signedAttrsDerB64: toBase64(result.signedAttrsDer),
+      logs,
     };
 
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-    const errorEntry = padesBackendLogger.logWorkflowStep(
-      "error",
-      "backend",
-      "presign",
-      `PDF presigning failed: ${errorMessage}`,
-      workflowId,
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    pushAndLog(
+      logs,
+      padesBackendLogger.logWorkflowStep(
+        "error",
+        "backend",
+        "presign",
+        `PDF presigning failed: ${msg}`,
+        workflowId,
+      ),
     );
-    logPAdES(errorEntry);
 
-    const response: PresignResponse = {
+    const response: PresignResponse & { logs: LogEntry[] } = {
       success: false,
       error: {
         code: "PRESIGN_FAILED",
-        message: errorMessage,
+        message: msg,
         timestamp: new Date().toISOString(),
       },
       toBeSignedB64: "",
       signedAttrsDerB64: "",
+      logs,
     };
-
     res.status(500).json(response);
   }
 });
 
-// Step 3: Finalize (assemble CMS and embed in PDF)
+// Finalize
 router.post("/pdf/finalize", async (req, res) => {
   const request = req.body as FinalizeRequest;
   const workflowId = generateShortId();
+  const logs: LogEntry[] = [];
 
-  const entry = padesBackendLogger.logWorkflowStep(
-    "info",
-    "backend",
-    "finalize",
-    "PDF finalize requested",
-    workflowId,
-    {
-      byteRange: request.byteRange,
-      signaturePresent: !!request.signatureB64,
-      certPresent: !!request.signerCertPem,
-      signatureAlgorithm: request.signatureAlgorithmOid,
-    },
+  pushAndLog(
+    logs,
+    padesBackendLogger.logWorkflowStep(
+      "info",
+      "backend",
+      "finalize",
+      "PDF finalize requested",
+      workflowId,
+      {
+        byteRange: request.byteRange,
+        signaturePresent: !!request.signatureB64,
+        certPresent: !!request.signerCertPem,
+        signatureAlgorithm: request.signatureAlgorithmOid,
+      },
+    ),
   );
-  logPAdES(entry);
 
   try {
-    // Validate required parameters
     if (!request.preparedPdfBase64) {
-      const response: FinalizeResponse = {
+      const response: FinalizeResponse & { logs: LogEntry[] } = {
         success: false,
         error: {
           code: "MISSING_PARAMETER",
@@ -354,13 +356,14 @@ router.post("/pdf/finalize", async (req, res) => {
           timestamp: new Date().toISOString(),
         },
         signedPdfBase64: "",
+        logs,
       };
       res.status(400).json(response);
       return;
     }
 
     if (!request.signedAttrsDerB64 || !request.signatureB64 || !request.signerCertPem) {
-      const response: FinalizeResponse = {
+      const response: FinalizeResponse & { logs: LogEntry[] } = {
         success: false,
         error: {
           code: "MISSING_PARAMETER",
@@ -368,18 +371,17 @@ router.post("/pdf/finalize", async (req, res) => {
           timestamp: new Date().toISOString(),
         },
         signedPdfBase64: "",
+        logs,
       };
       res.status(400).json(response);
       return;
     }
 
-    // Decode parameters
     const preparedPdfBytes = fromBase64(request.preparedPdfBase64);
     const signedAttrsDer = fromBase64(request.signedAttrsDerB64);
     const signature = fromBase64(request.signatureB64);
 
-    // Assemble CMS
-    const logs: LogEntry[] = [];
+    const serviceLogs: LogEntry[] = [];
     const cmsResult = await cmsService.assembleCMS(
       {
         signedAttrsDer,
@@ -389,109 +391,109 @@ router.post("/pdf/finalize", async (req, res) => {
         signatureAlgorithmOid: request.signatureAlgorithmOid,
         withTimestamp: true,
       },
-      logs,
+      serviceLogs,
     );
 
-    // Log CMS assembly information
-    logs.forEach((log) => logPAdES(log));
+    serviceLogs.forEach((l) => pushAndLog(logs, l));
 
-    // Embed CMS into PDF
     const signedPdfBytes = pdfService.embedCmsIntoPdf(
       new Uint8Array(preparedPdfBytes),
       new Uint8Array(cmsResult.cmsDer),
     );
 
-    const successEntry = padesBackendLogger.logWorkflowStep(
-      "success",
-      "backend",
-      "finalize",
-      "PDF finalized successfully",
-      workflowId,
-      {
-        finalPdfSize: signedPdfBytes.length,
-        cmsSize: cmsResult.cmsDer.length,
-        estimatedCmsSize: cmsResult.estimatedSize,
-      },
+    pushAndLog(
+      logs,
+      padesBackendLogger.logWorkflowStep(
+        "success",
+        "backend",
+        "finalize",
+        "PDF finalized",
+        workflowId,
+        {
+          finalPdfSize: signedPdfBytes.length,
+          cmsSize: cmsResult.cmsDer.length,
+          estimatedCmsSize: cmsResult.estimatedSize,
+        },
+      ),
     );
-    logPAdES(successEntry);
 
-    const response: FinalizeResponse = {
+    const response: FinalizeResponse & { logs: LogEntry[] } = {
       success: true,
       signedPdfBase64: toBase64(Buffer.from(signedPdfBytes)),
+      logs,
     };
-
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-    const errorEntry = padesBackendLogger.logWorkflowStep(
-      "error",
-      "backend",
-      "finalize",
-      `PDF finalization failed: ${errorMessage}`,
-      workflowId,
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    pushAndLog(
+      logs,
+      padesBackendLogger.logWorkflowStep(
+        "error",
+        "backend",
+        "finalize",
+        `PDF finalization failed: ${msg}`,
+        workflowId,
+      ),
     );
-    logPAdES(errorEntry);
 
-    const response: FinalizeResponse = {
+    const response: FinalizeResponse & { logs: LogEntry[] } = {
       success: false,
       error: {
         code: "FINALIZATION_FAILED",
-        message: errorMessage,
+        message: msg,
         timestamp: new Date().toISOString(),
       },
       signedPdfBase64: "",
+      logs,
     };
-
     res.status(500).json(response);
   }
 });
 
-// Verify signed PDF
+// Verify
 router.post("/pdf/verify", async (req, res) => {
   const request = req.body as VerificationRequest;
   const workflowId = generateShortId();
+  const logs: LogEntry[] = [];
+
   const pdfSize = Buffer.from(request.pdfBase64 || "", "base64").length;
-
-  const entry = padesBackendLogger.logWorkflowStep(
-    "info",
-    "backend",
-    "verify",
-    "PDF verification requested",
-    workflowId,
-    { pdfSize },
-  );
-  logPAdES(entry);
-
-  try {
-    // Initialize verification service
-    const verificationService = new VerificationService();
-
-    // Verify the PDF
-    const verificationResult = await verificationService.verify({
-      pdfBase64: request.pdfBase64,
-    });
-
-    // Log verification logs
-    verificationResult.logs.forEach((log) => logPAdES(log));
-
-    const successEntry = padesBackendLogger.logWorkflowStep(
-      verificationResult.isCryptographicallyValid ? "success" : "warning",
+  pushAndLog(
+    logs,
+    padesBackendLogger.logWorkflowStep(
+      "info",
       "backend",
       "verify",
-      `PDF verification completed: ${verificationResult.isCryptographicallyValid ? "VALID" : "INVALID"}`,
+      "PDF verification requested",
       workflowId,
-      {
-        isValid: verificationResult.isCryptographicallyValid,
-        signatureLevel: verificationResult.signatureLevel,
-        isTimestamped: verificationResult.isTimestamped,
-        signerCN: verificationResult.signerCN,
-        reasonCount: verificationResult.reasons.length,
-      },
-    );
-    logPAdES(successEntry);
+      { pdfSize },
+    ),
+  );
 
-    const response: VerificationResponse = {
+  try {
+    const verificationService = new VerificationService();
+    const verificationResult = await verificationService.verify({ pdfBase64: request.pdfBase64 });
+
+    verificationResult.logs.forEach((l) => pushAndLog(logs, l));
+
+    pushAndLog(
+      logs,
+      padesBackendLogger.logWorkflowStep(
+        verificationResult.isCryptographicallyValid ? "success" : "warning",
+        "backend",
+        "verify",
+        `Verification: ${verificationResult.isCryptographicallyValid ? "VALID" : "INVALID"}`,
+        workflowId,
+        {
+          isValid: verificationResult.isCryptographicallyValid,
+          signatureLevel: verificationResult.signatureLevel,
+          isTimestamped: verificationResult.isTimestamped,
+          signerCN: verificationResult.signerCN,
+          reasonCount: verificationResult.reasons.length,
+        },
+      ),
+    );
+
+    const response: VerificationResponse & { logs: LogEntry[] } = {
       success: true,
       result: {
         isCryptographicallyValid: verificationResult.isCryptographicallyValid,
@@ -503,26 +505,27 @@ router.post("/pdf/verify", async (req, res) => {
         timestampTime: verificationResult.timestampTime,
         reasons: verificationResult.reasons,
       },
+      logs,
     };
-
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-    const errorEntry = padesBackendLogger.logWorkflowStep(
-      "error",
-      "backend",
-      "verify",
-      `PDF verification failed: ${errorMessage}`,
-      workflowId,
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    pushAndLog(
+      logs,
+      padesBackendLogger.logWorkflowStep(
+        "error",
+        "backend",
+        "verify",
+        `Verification failed: ${msg}`,
+        workflowId,
+      ),
     );
-    logPAdES(errorEntry);
 
-    const response: VerificationResponse = {
+    const response: VerificationResponse & { logs: LogEntry[] } = {
       success: false,
       error: {
         code: "VERIFICATION_FAILED",
-        message: errorMessage,
+        message: msg,
         timestamp: new Date().toISOString(),
       },
       result: {
@@ -530,120 +533,160 @@ router.post("/pdf/verify", async (req, res) => {
         isPAdESCompliant: false,
         isTimestamped: false,
         signatureLevel: "UNKNOWN",
-        reasons: [errorMessage],
+        reasons: [msg],
       },
+      logs,
     };
-
     res.status(500).json(response);
   }
 });
 
+// Provide DC parameter to frontend
 router.get("/icanopee/dc-parameter", (req, res) => {
   const workflowId = generateShortId();
+  const logs: LogEntry[] = [];
 
-  const entry = padesBackendLogger.createLogEntry(
-    "info",
-    "backend",
-    "DC parameter requested for frontend Icanopee integration",
-    { workflowId },
+  pushAndLog(
+    logs,
+    padesBackendLogger.createLogEntry(
+      "info",
+      "backend",
+      "DC parameter requested for frontend Icanopee integration",
+      { workflowId },
+    ),
   );
-  logPAdES(entry);
 
   try {
     const dcParameter = process.env.ICANOPEE_DC_PARAMETER;
 
     if (!dcParameter) {
-      const response = {
+      const response: BaseApiResponse & { logs: LogEntry[] } = {
         success: false,
         error: {
           code: "DC_PARAMETER_NOT_CONFIGURED",
-          message: "DC parameter not configured. Set ICANOPEE_DC_PARAMETER environment variable.",
+          message: "Set ICANOPEE_DC_PARAMETER env",
           timestamp: new Date().toISOString(),
         },
+        logs,
       };
       res.status(500).json(response);
       return;
     }
 
-    const response = {
-      success: true,
-      dcParameter,
-    };
-
-    const successEntry = padesBackendLogger.createLogEntry(
-      "success",
-      "backend",
-      "DC parameter provided successfully for frontend",
-      { workflowId, parameterLength: dcParameter.length },
+    pushAndLog(
+      logs,
+      padesBackendLogger.createLogEntry("success", "backend", "DC parameter provided", {
+        workflowId,
+        parameterLength: dcParameter.length,
+      }),
     );
-    logPAdES(successEntry);
 
-    res.json(response);
+    res.json({ success: true, dcParameter, logs });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-    const errorEntry = padesBackendLogger.createLogEntry(
-      "error",
-      "backend",
-      `Failed to provide DC parameter: ${errorMessage}`,
-      { workflowId },
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    pushAndLog(
+      logs,
+      padesBackendLogger.createLogEntry(
+        "error",
+        "backend",
+        `Failed to provide DC parameter: ${msg}`,
+        { workflowId },
+      ),
     );
-    logPAdES(errorEntry);
 
-    const response = {
+    res.status(500).json({
       success: false,
-      error: {
-        code: "DC_PARAMETER_ERROR",
-        message: errorMessage,
-        timestamp: new Date().toISOString(),
-      },
-    };
-
-    res.status(500).json(response);
+      error: { code: "DC_PARAMETER_ERROR", message: msg, timestamp: new Date().toISOString() },
+      logs,
+    });
   }
 });
 
-// Mock HSM signing endpoint (for development)
+// NEW: Mock HSM certificate endpoint
+router.get("/mock/cert", (req, res) => {
+  const logs: LogEntry[] = [];
+  const workflowId = generateShortId();
+
+  pushAndLog(
+    logs,
+    padesBackendLogger.createLogEntry("info", "mock-hsm", "Mock HSM cert requested", {
+      workflowId,
+    }),
+  );
+
+  try {
+    if (!mockHSM.isInitialized()) {
+      throw new Error("Mock HSM not initialized");
+    }
+    const signerCertPem = mockHSM.getSignerCertificatePem();
+    const certificateChainPem = mockHSM.getCertificateChainPem(false);
+
+    pushAndLog(
+      logs,
+      padesBackendLogger.createLogEntry("success", "mock-hsm", "Provided mock cert", {
+        workflowId,
+        certLen: signerCertPem.length,
+      }),
+    );
+
+    res.json({
+      success: true,
+      signerCertPem,
+      certificateChainPem,
+      logs,
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    pushAndLog(
+      logs,
+      padesBackendLogger.createLogEntry("error", "mock-hsm", `Mock cert failed: ${msg}`, {
+        workflowId,
+      }),
+    );
+
+    res.status(500).json({
+      success: false,
+      error: { code: "MOCK_CERT_FAILED", message: msg, timestamp: new Date().toISOString() },
+      logs,
+    });
+  }
+});
+
+// Mock sign
 router.post("/mock/sign", async (req, res) => {
   const { toBeSignedB64 } = req.body as { toBeSignedB64: string };
   const workflowId = generateShortId();
+  const logs: LogEntry[] = [];
 
-  const entry = padesBackendLogger.createLogEntry(
-    "info",
-    "mock-hsm",
-    "Mock HSM signing requested",
-    {
+  pushAndLog(
+    logs,
+    padesBackendLogger.createLogEntry("info", "mock-hsm", "Mock HSM sign requested", {
       workflowId,
       dataSize: toBeSignedB64?.length || 0,
-    },
+    }),
   );
-  logPAdES(entry);
 
   try {
     if (!toBeSignedB64) {
-      const response: MockSignResponse = {
+      const response: MockSignResponse & { logs: LogEntry[] } = {
         success: false,
         error: {
           code: "INVALID_REQUEST",
-          message: "toBeSignedB64 parameter is required",
+          message: "toBeSignedB64 is required",
           timestamp: new Date().toISOString(),
         },
         signatureB64: "",
         signerCertPem: "",
         signatureAlgorithmOid: "",
+        logs,
       };
       res.status(400).json(response);
       return;
     }
 
-    // Ensure Mock HSM is ready
+    if (!mockHSM.isInitialized()) await mockHSM.ready;
     if (!mockHSM.isInitialized()) {
-      // Try to wait a bit for initialization
-      await mockHSM.ready;
-    }
-
-    if (!mockHSM.isInitialized()) {
-      const response: MockSignResponse = {
+      const response: MockSignResponse & { logs: LogEntry[] } = {
         success: false,
         error: {
           code: "INTERNAL_ERROR",
@@ -653,6 +696,7 @@ router.post("/mock/sign", async (req, res) => {
         signatureB64: "",
         signerCertPem: "",
         signatureAlgorithmOid: "",
+        logs,
       };
       res.status(500).json(response);
       return;
@@ -660,97 +704,47 @@ router.post("/mock/sign", async (req, res) => {
 
     const signatureB64 = await mockHSM.signBase64(toBeSignedB64);
     const signerCertPem = mockHSM.getSignerCertificatePem();
-    const certificateChainPem = mockHSM.getCertificateChainPem(false); // Don't include root in response
+    const certificateChainPem = mockHSM.getCertificateChainPem(false);
 
-    const successEntry = padesBackendLogger.createLogEntry(
-      "success",
-      "mock-hsm",
-      "Data signed successfully with mock HSM",
-      {
+    pushAndLog(
+      logs,
+      padesBackendLogger.createLogEntry("success", "mock-hsm", "Mock sign success", {
         workflowId,
         signatureSize: Buffer.from(signatureB64, "base64").length,
         algorithm: "RSA-SHA256",
-      },
+      }),
     );
-    logPAdES(successEntry);
 
-    const response: MockSignResponse = {
+    const response: MockSignResponse & { logs: LogEntry[] } = {
       success: true,
       signatureB64,
       signerCertPem,
       certificateChainPem,
-      signatureAlgorithmOid: "1.2.840.113549.1.1.11", // SHA256withRSA
+      signatureAlgorithmOid: "1.2.840.113549.1.1.11",
+      logs,
     };
-
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-    const errorEntry = padesBackendLogger.createLogEntry(
-      "error",
-      "mock-hsm",
-      `Mock HSM signing failed: ${errorMessage}`,
-      { workflowId },
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    pushAndLog(
+      logs,
+      padesBackendLogger.createLogEntry("error", "mock-hsm", `Mock sign failed: ${msg}`, {
+        workflowId,
+      }),
     );
-    logPAdES(errorEntry);
 
-    const response: MockSignResponse = {
+    const response: MockSignResponse & { logs: LogEntry[] } = {
       success: false,
       error: {
         code: "SIGNING_FAILED",
-        message: errorMessage,
+        message: msg,
         timestamp: new Date().toISOString(),
       },
       signatureB64: "",
       signerCertPem: "",
       signatureAlgorithmOid: "",
+      logs,
     };
-
     res.status(500).json(response);
   }
-});
-
-// CPS card endpoints (for production)
-router.post("/cps/readers", (req, res) => {
-  const workflowId = generateShortId();
-
-  const entry = padesBackendLogger.logCPSOperation(
-    "info",
-    "CPS readers list requested",
-    workflowId,
-    undefined,
-  );
-  logPAdES(entry);
-
-  // TODO: Implement CPS reader detection
-  res.status(501).json({
-    success: false,
-    error: {
-      code: "NOT_IMPLEMENTED",
-      message: "CPS reader detection not yet implemented",
-      timestamp: new Date().toISOString(),
-    },
-  });
-});
-
-router.post("/cps/sign", (req, res) => {
-  const workflowId = generateShortId();
-
-  const entry = padesBackendLogger.logCPSOperation(
-    "info",
-    "CPS signing requested",
-    workflowId,
-    undefined,
-  );
-  logPAdES(entry);
-
-  // TODO: Implement CPS signing
-  res.status(501).json({
-    success: false,
-    error: {
-      code: "NOT_IMPLEMENTED",
-      message: "CPS signing not yet implemented",
-      timestamp: new Date().toISOString(),
-    },
-  });
 });
