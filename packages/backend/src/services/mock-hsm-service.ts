@@ -78,6 +78,15 @@ const DEFAULTS: MockHSMConfig = {
   hashAlgorithm: "SHA-256",
 };
 
+type Paths = {
+  rootCert: string;
+  intermediateCert: string;
+  signerCert: string;
+  rootKeyPem: string;
+  intermediateKeyPem: string;
+  signerKeyPem: string;
+};
+
 /**
  * Mock Hardware Security Module implementation
  *
@@ -97,8 +106,10 @@ export class MockHSMService {
   private readonly pki = getCrypto(true); // PKI.js crypto engine
 
   private rootCertPem?: string;
+  private intermediateCertPem?: string;
   private signerCertPem?: string;
   private rootKey?: CryptoKey;
+  private intermediateKey?: CryptoKey;
   private signerKey?: CryptoKey;
 
   /**
@@ -148,9 +159,12 @@ export class MockHSMService {
    * @param includeRoot Whether to include root CA certificate
    * @returns Array of PEM-encoded certificates (leaf first, then CA)
    */
-  getCertificateChainPem(includeRoot = true): string[] {
+  getCertificateChainPem(includeRoot = false): string[] {
     this.ensureReady();
-    return includeRoot ? [this.signerCertPem!, this.rootCertPem!] : [this.signerCertPem!];
+    const chain: string[] = [];
+    if (this.intermediateCertPem) chain.push(this.intermediateCertPem);
+    if (includeRoot && this.rootCertPem) chain.push(this.rootCertPem);
+    return chain;
   }
 
   /**
@@ -291,15 +305,19 @@ export class MockHSMService {
 
     const paths = {
       rootCert: join(this.cfg.certDir, "mock-root-cert.pem"),
+      intermediateCert: join(this.cfg.certDir, "mock-intermediate-cert.pem"),
       signerCert: join(this.cfg.certDir, "mock-signer-cert.pem"),
-      rootKeyPem: join(this.cfg.certDir, "mock-root-key.pem"), // PKCS#8
-      signerKeyPem: join(this.cfg.certDir, "mock-signer-key.pem"), // PKCS#8
-    };
+      rootKeyPem: join(this.cfg.certDir, "mock-root-key.pem"),
+      intermediateKeyPem: join(this.cfg.certDir, "mock-intermediate-key.pem"),
+      signerKeyPem: join(this.cfg.certDir, "mock-signer-key.pem"),
+    } satisfies Paths;
 
     const haveAll =
       existsSync(paths.rootCert) &&
+      existsSync(paths.intermediateCert) &&
       existsSync(paths.signerCert) &&
       existsSync(paths.rootKeyPem) &&
+      existsSync(paths.intermediateKeyPem) &&
       existsSync(paths.signerKeyPem);
 
     if (haveAll) {
@@ -343,27 +361,19 @@ export class MockHSMService {
   /**
    * Load certificates and keys from disk
    */
-  private async loadExistingCertificates(paths: {
-    rootCert: string;
-    signerCert: string;
-    rootKeyPem: string;
-    signerKeyPem: string;
-  }): Promise<void> {
+  private async loadExistingCertificates(paths: Paths): Promise<void> {
     this.rootCertPem = readFileSync(paths.rootCert, "utf8");
     this.signerCertPem = readFileSync(paths.signerCert, "utf8");
+    this.intermediateCertPem = readFileSync(paths.intermediateCert, "utf8");
     this.rootKey = await this.importPkcs8(readFileSync(paths.rootKeyPem, "utf8"));
+    this.intermediateKey = await this.importPkcs8(readFileSync(paths.intermediateKeyPem, "utf8"));
     this.signerKey = await this.importPkcs8(readFileSync(paths.signerKeyPem, "utf8"));
   }
 
   /**
    * Generate new certificate hierarchy and persist to disk
    */
-  private async generateAndPersist(paths: {
-    rootCert: string;
-    signerCert: string;
-    rootKeyPem: string;
-    signerKeyPem: string;
-  }): Promise<void> {
+  private async generateAndPersist(paths: Paths): Promise<void> {
     const genEntry = padesBackendLogger.createLogEntry(
       "info",
       "mock-hsm",
@@ -384,6 +394,10 @@ export class MockHSMService {
       "sign",
       "verify",
     ])) as CryptoKeyPair;
+    const intermediateKeys = (await this.subtle.generateKey(rsaParams, true, [
+      "sign",
+      "verify",
+    ])) as CryptoKeyPair;
     const leafKeys = (await this.subtle.generateKey(rsaParams, true, [
       "sign",
       "verify",
@@ -392,13 +406,15 @@ export class MockHSMService {
     const now = new Date();
     const notAfter = new Date(now.getTime() + this.cfg.validityYears * 365 * 24 * 60 * 60 * 1000);
 
+    // Distinguished Names
     const rootDN = `CN=Mock Root CA, O=${this.cfg.organization}, C=${this.cfg.country}`;
+    const interDN = `CN=Mock Intermediate CA, O=${this.cfg.organization}, C=${this.cfg.country}`;
     const leafDN = `CN=${this.cfg.signerName}, O=${this.cfg.organization}, C=${this.cfg.country}`;
 
-    // Generate certificates
+    // Create Root (self-signed)
     const rootCert = await this.createCertificate({
       subject: rootDN,
-      issuer: rootDN, // Self-signed
+      issuer: rootDN,
       serialNumber: 1,
       notBefore: now,
       notAfter,
@@ -407,31 +423,49 @@ export class MockHSMService {
       isCA: true,
     });
 
+    // Create Intermediate (signed by Root) – CA=true, pathLen=0
+    const intermediateCert = await this.createCertificate({
+      subject: interDN,
+      issuer: rootDN,
+      serialNumber: 2,
+      notBefore: now,
+      notAfter,
+      keyPair: intermediateKeys,
+      signingKey: rootKeys.privateKey,
+      isCA: true,
+    });
+
+    // Create Leaf (signed by Intermediate) – CA=false with digitalSignature + nonRepudiation
     const leafCert = await this.createCertificate({
       subject: leafDN,
-      issuer: rootDN,
+      issuer: interDN,
       serialNumber: 0x012345, // Fixed serial number for consistency
       notBefore: now,
       notAfter,
       keyPair: leafKeys,
-      signingKey: rootKeys.privateKey, // Signed by root CA
+      signingKey: intermediateKeys.privateKey,
       isCA: false,
     });
 
-    // Convert to PEM and persist
+    // Save PEMs
     this.rootCertPem = this.certToPem(rootCert);
+    this.intermediateCertPem = this.certToPem(intermediateCert);
     this.signerCertPem = this.certToPem(leafCert);
     writeFileSync(paths.rootCert, this.rootCertPem);
+    writeFileSync(paths.intermediateCert, this.intermediateCertPem);
     writeFileSync(paths.signerCert, this.signerCertPem);
 
-    // Export and persist private keys as PKCS#8 PEM
+    // Export private keys (PKCS#8)
     const rootPkcs8 = await this.subtle.exportKey("pkcs8", rootKeys.privateKey);
+    const interPkcs8 = await this.subtle.exportKey("pkcs8", intermediateKeys.privateKey);
     const leafPkcs8 = await this.subtle.exportKey("pkcs8", leafKeys.privateKey);
     writeFileSync(paths.rootKeyPem, this.toPem("PRIVATE KEY", rootPkcs8));
+    writeFileSync(paths.intermediateKeyPem, this.toPem("PRIVATE KEY", interPkcs8));
     writeFileSync(paths.signerKeyPem, this.toPem("PRIVATE KEY", leafPkcs8));
 
-    // Keep imported keys in memory for signing
+    // Keep keys in memory
     this.rootKey = rootKeys.privateKey;
+    this.intermediateKey = intermediateKeys.privateKey;
     this.signerKey = leafKeys.privateKey;
 
     const persistEntry = padesBackendLogger.createLogEntry(
@@ -464,15 +498,13 @@ export class MockHSMService {
     cert.notAfter = new Time({ value: params.notAfter });
     await cert.subjectPublicKeyInfo.importKey(params.keyPair.publicKey);
 
-    // Set up X.509v3 extensions
-    let keyUsageBits = 0;
-    if (params.isCA) {
-      keyUsageBits |= 0x04; // keyCertSign (bit 2)
-      keyUsageBits |= 0x02; // cRLSign (bit 1)
-    } else {
-      keyUsageBits |= 0x80; // digitalSignature (bit 7)
-      keyUsageBits |= 0x40; // nonRepudiation/contentCommitment (bit 6)
-    }
+    const keyUsageBits = params.isCA
+      ? 0x04 /* keyCertSign */ | 0x02 /* cRLSign */
+      : 0x80 /* digitalSignature */ | 0x40; /* nonRepudiation */
+
+    const keyUsageBitString = new asn1js.BitString();
+    keyUsageBitString.valueBlock.valueHex = new Uint8Array([keyUsageBits]).buffer;
+    keyUsageBitString.valueBlock.unusedBits = 0;
 
     cert.extensions = [
       new Extension({
@@ -488,9 +520,7 @@ export class MockHSMService {
       new Extension({
         extnID: "2.5.29.15", // KeyUsage
         critical: true,
-        extnValue: new asn1js.BitString({
-          valueHex: new Uint8Array([0, keyUsageBits]).buffer,
-        }).toBER(false),
+        extnValue: keyUsageBitString.toBER(false),
       }),
     ];
 

@@ -253,33 +253,45 @@ export class CertificateChainValidator {
     if (cert.extensions) {
       const keyUsageExt = cert.extensions.find((ext) => ext.extnID === "2.5.29.15");
       if (keyUsageExt && keyUsageExt.extnValue) {
-        const keyUsageBits = new asn1js.BitString({
-          valueHex: keyUsageExt.extnValue.valueBlock.valueHex,
-        });
+        try {
+          const parsed = asn1js.fromBER(keyUsageExt.extnValue.valueBlock.valueHex);
+          const bitStr = parsed.result as asn1js.BitString;
+          const bitsArr = new Uint8Array(bitStr.valueBlock.valueHex);
+          const bits = bitsArr.length > 0 ? bitsArr[bitsArr.length - 1] : 0;
 
-        // Structured debug logging for key usage extension parsing
-        const keyUsageHex = Buffer.from(keyUsageExt.extnValue.valueBlock.valueHex).toString("hex");
-        const keyUsageBitsHex = Buffer.from(keyUsageBits.valueBlock.valueHex).toString("hex");
-        const bitsArr = new Uint8Array(keyUsageBits.valueBlock.valueHex);
-        const bits = bitsArr.length > 0 ? bitsArr[bitsArr.length - 1] : 0;
+          logPAdES(
+            padesBackendLogger.createLogEntry("debug", "backend", "Parsed keyUsage extension", {
+              bits,
+              subject,
+              serialNumber,
+            }),
+          );
 
-        logPAdES(
-          padesBackendLogger.createLogEntry("debug", "backend", "Parsed keyUsage extension", {
-            keyUsageHex,
-            keyUsageBitsHex,
-            bits,
-            subject,
-            serialNumber,
-          }),
-        );
-
-        if (bits & 0x80) keyUsage.push("digitalSignature");
-        if (bits & 0x40) keyUsage.push("nonRepudiation");
-        if (bits & 0x20) keyUsage.push("keyEncipherment");
-        if (bits & 0x10) keyUsage.push("dataEncipherment");
-        if (bits & 0x08) keyUsage.push("keyAgreement");
-        if (bits & 0x04) keyUsage.push("keyCertSign");
-        if (bits & 0x02) keyUsage.push("cRLSign");
+          if (bits & 0x80) keyUsage.push("digitalSignature");
+          if (bits & 0x40) keyUsage.push("nonRepudiation");
+          if (bits & 0x20) keyUsage.push("keyEncipherment");
+          if (bits & 0x10) keyUsage.push("dataEncipherment");
+          if (bits & 0x08) keyUsage.push("keyAgreement");
+          if (bits & 0x04) keyUsage.push("keyCertSign");
+          if (bits & 0x02) keyUsage.push("cRLSign");
+          if (bits & 0x01) keyUsage.push("encipherOnly");
+          // “decipherOnly” lives in an extra byte if keyAgreement set; skip unless needed.
+        } catch (error) {
+          // fall back to empty keyUsage
+          const errorMsg = error instanceof Error ? error.message : "Unknown error";
+          logPAdES(
+            padesBackendLogger.createLogEntry(
+              "warning",
+              "backend",
+              "Unable to parse keyUsage extension",
+              {
+                error: errorMsg,
+                subject,
+                serialNumber,
+              },
+            ),
+          );
+        }
       }
     }
 

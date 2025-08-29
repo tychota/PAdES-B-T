@@ -283,13 +283,13 @@ router.post("/pdf/presign", (req, res) => {
         "presign",
         "Signed attributes built",
         workflowId,
-        { derSize: result.signedAttrsDer.length, hashSize: result.toBeSignedHash.length },
+        { derSize: result.signedAttrsDer.length },
       ),
     );
 
     const response: PresignResponse & { logs: LogEntry[] } = {
       success: true,
-      toBeSignedB64: toBase64(result.toBeSignedHash),
+      toBeSignedB64: toBase64(result.signedAttrsDer),
       signedAttrsDerB64: toBase64(result.signedAttrsDer),
       logs,
     };

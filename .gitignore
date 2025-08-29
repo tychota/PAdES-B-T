@@ -45,6 +45,7 @@ temp/
 # Certificate files (for development)
 certs/
 *.pem
+*.cer
 *.p12
 *.pfx
 

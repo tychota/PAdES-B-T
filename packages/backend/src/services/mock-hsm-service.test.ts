@@ -1,6 +1,8 @@
 import { existsSync, rmSync } from "fs";
 import { join } from "path";
 
+import { fromBER, BitString } from "asn1js";
+import { Certificate } from "pkijs";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.stubEnv("LOG_LEVEL", "error");
@@ -65,7 +67,7 @@ describe("MockHSMService", () => {
       const info = mockHSM.getCertificateInfo();
 
       expect(info.subject).toContain("Test Signer");
-      expect(info.issuer).toContain("Mock Root CA");
+      expect(info.issuer).toContain("Mock Intermediate CA");
       expect(info.keyUsage).toContain("digitalSignature");
       expect(info.keyUsage).toContain("nonRepudiation");
       expect(info.validFrom).toBeInstanceOf(Date);
@@ -133,6 +135,55 @@ describe("MockHSMService", () => {
       const reloadedCert = secondHSM.getSignerCertificatePem();
       expect(reloadedCert).toBe(firstCert);
     }, 15000);
+  });
+
+  describe("keyUsage", () => {
+    it("leaf KeyUsage is digitalSignature + nonRepudiation; intermediate is CA", async () => {
+      const hsm = new MockHSMService();
+      await hsm.ready;
+      const leafPem = hsm.getSignerCertificatePem();
+      const [interPem] = hsm.getCertificateChainPem(false);
+
+      const der = Buffer.from(leafPem.replace(/-----.*?-----/g, "").replace(/\s+/g, ""), "base64");
+      const asn = fromBER(der);
+      const leaf = new Certificate({ schema: asn.result });
+
+      const kuExt = leaf.extensions?.find((e) => e.extnID === "2.5.29.15");
+      if (!kuExt) {
+        throw new Error("KeyUsage extension not found");
+      }
+
+      const parsed = fromBER(kuExt.extnValue.valueBlock.valueHex);
+      if (parsed.offset === -1) {
+        throw new Error("Failed to parse KeyUsage extension");
+      }
+
+      const bitStr = parsed.result as BitString;
+      if (!bitStr.valueBlock?.valueHex) {
+        throw new Error("Invalid BitString structure in KeyUsage extension");
+      }
+
+      console.log(bitStr.valueBlock.valueHex);
+      const keyUsageBytes = new Uint8Array(bitStr.valueBlock.valueHex);
+      const last = keyUsageBytes[keyUsageBytes.length - 1];
+      if (last === undefined) {
+        throw new Error("KeyUsage extension has no data");
+      }
+      expect(!!(last & 0x80)).toBe(true); // digitalSignature
+      expect(!!(last & 0x40)).toBe(true); // nonRepudiation
+
+      // Intermediate CA
+      const intDer = Buffer.from(
+        interPem.replace(/-----.*?-----/g, "").replace(/\s+/g, ""),
+        "base64",
+      );
+      const intCert = new Certificate({ schema: fromBER(intDer).result });
+      const bcExt = intCert.extensions?.find((e) => e.extnID === "2.5.29.19");
+      if (!bcExt) {
+        throw new Error("BasicConstraints extension not found in intermediate certificate");
+      }
+      expect(bcExt.critical).toBe(true);
+    });
   });
 
   describe("error handling", () => {

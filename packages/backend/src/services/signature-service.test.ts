@@ -28,8 +28,7 @@ describe("SignatureService", () => {
 
       expect(result.signedAttrsDer).toBeInstanceOf(Buffer);
       expect(result.signedAttrsDer.length).toBeGreaterThan(0);
-      expect(result.toBeSignedHash).toBeInstanceOf(Buffer);
-      expect(result.toBeSignedHash.length).toBe(32); // SHA-256 hash length
+      // signedAttrsDer contains the DER bytes that should be signed directly
     });
 
     it("should produce deterministic output for same inputs", () => {
@@ -48,7 +47,6 @@ describe("SignatureService", () => {
       });
 
       expect(Buffer.compare(result1.signedAttrsDer, result2.signedAttrsDer)).toBe(0);
-      expect(Buffer.compare(result1.toBeSignedHash, result2.toBeSignedHash)).toBe(0);
     });
 
     it("should include mandatory PAdES attributes", () => {
@@ -89,7 +87,6 @@ describe("SignatureService", () => {
 
       // Results should be different due to different message digests
       expect(Buffer.compare(result1.signedAttrsDer, result2.signedAttrsDer)).not.toBe(0);
-      expect(Buffer.compare(result1.toBeSignedHash, result2.toBeSignedHash)).not.toBe(0);
     });
 
     it("should throw error for invalid certificate", () => {

@@ -8,7 +8,7 @@
  */
 
 import * as asn1js from "asn1js"; // Retained: required for ESSCertIDv2, attribute values, and Set
-import { Attribute, Certificate, SignedAndUnsignedAttributes } from "pkijs";
+import { Attribute, Certificate } from "pkijs";
 
 import { sha256 } from "./crypto-utils";
 
@@ -23,15 +23,10 @@ export interface SignedAttributesParams {
 
 export interface SignedAttributesResult {
   /**
-   * DER of the inner SET OF Attribute (used later to set SignerInfo.signedAttrs).
-   * Note: This is *not* the [0] IMPLICIT wrapper.
+   * DER of the SET OF Attribute (used for both SignerInfo.signedAttrs and signing).
+   * This is the exact DER bytes that must be signed by the remote signer.
    */
   signedAttrsDer: Buffer;
-  /**
-   * Hash over the exact bytes that must be signed (DER of the [0] IMPLICIT signedAttrs).
-   * This is what a remote signer should actually sign.
-   */
-  toBeSignedHash: Buffer;
 }
 
 /** PEM → DER */
@@ -65,10 +60,11 @@ function bufToArrayBuffer(b: Buffer): ArrayBuffer {
  */
 function buildSigningCertificateV2Value(certHash: Buffer): asn1js.Sequence {
   // ASN.1js is required for custom ESSCertIDv2/SigningCertificateV2 structure (not natively supported by PKI.js)
+  // For SHA-256 AlgorithmIdentifier, parameters MUST be absent (RFC 5754)
   const hashAlgId = new asn1js.Sequence({
     value: [
       new asn1js.ObjectIdentifier({ value: "2.16.840.1.101.3.4.2.1" }), // id-sha256
-      new asn1js.Null(),
+      // REMOVED the Null() here; parameters must be absent for SHA-2 OIDs
     ],
   });
 
@@ -130,14 +126,6 @@ export class SignatureService {
       .sort((x, y) => Buffer.compare(x.der, y.der))
       .map(({ a }) => a);
 
-    // === Let PKI.js produce [0] IMPLICIT wrapper for to-be-signed bytes if needed ===
-    const signedAttrsWrapper = new SignedAndUnsignedAttributes({
-      type: 0,
-      attributes,
-    });
-    const toBeSignedDer = Buffer.from(signedAttrsWrapper.toSchema().toBER(false));
-    const toBeSignedHash = sha256(toBeSignedDer);
-
     // === Inner SET OF Attribute (tag 0x31...) ===
     const innerSet = new asn1js.Set({ value: attributes.map((a) => a.toSchema()) });
     const signedAttrsDer = Buffer.from(innerSet.toBER(false));
@@ -148,14 +136,13 @@ export class SignatureService {
       source: "backend",
       message: "Built signed attributes (CMS/PAdES) with minimal ASN.1 handling",
       context: {
-        attributeCount: attributes.length, // rename from attrCount → attributeCount
+        attributeCount: attributes.length,
         derSetSize: signedAttrsDer.length,
-        toBeSignedSize: toBeSignedDer.length,
         certSubjectCN: this.extractCN(cert),
       },
     });
 
-    return { signedAttrsDer, toBeSignedHash };
+    return { signedAttrsDer };
   }
 
   private extractCN(cert: Certificate): string {
