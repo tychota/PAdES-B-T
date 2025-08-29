@@ -1,18 +1,16 @@
 // packages/frontend/src/components/PDFWorkflow.tsx
 import { Grid, Stepper, Paper, Stack, Text } from "@mantine/core";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 
-import { logsAtom, pdfBase64Atom, workflowStateAtom } from "../store/atoms";
+import { logsAtom, workflowStateAtom } from "../store/atoms";
 import { PADES_WORKFLOW_STEPS, getStepIndex } from "../utils/workflow";
 
 import { LogPanel } from "./LogPanel";
-import { PdfViewerPanel } from "./PDFViewerPanel";
 import { StepContent } from "./StepContent";
 import { WorkflowActions } from "./WorkflowActions";
 
 export function PDFWorkflow() {
   const [workflowState, setWorkflowState] = useAtom(workflowStateAtom);
-  const pdfBase64 = useAtomValue(pdfBase64Atom);
   const setLogs = useSetAtom(logsAtom);
 
   const activeStep = getStepIndex(workflowState.step);
@@ -53,12 +51,6 @@ export function PDFWorkflow() {
           </Paper>
         </Grid.Col>
       </Grid>
-
-      {pdfBase64 && (
-        <Paper shadow="sm" p="lg" withBorder>
-          <PdfViewerPanel pdfBase64={pdfBase64} />
-        </Paper>
-      )}
     </Stack>
   );
 }

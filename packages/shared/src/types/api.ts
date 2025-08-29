@@ -47,6 +47,8 @@ export interface FinalizeRequest {
   signerCertPem: string;
   certificateChainPem?: string[]; // Optional intermediate certificates
   signatureAlgorithmOid?: string; // Default: SHA256withRSA
+  /** Whether to request and embed RFC 3161 signature-time-stamp token (B-T). Default true. */
+  withTimestamp?: boolean;
 }
 
 export interface FinalizeResponse extends BaseApiResponse {
@@ -73,4 +75,39 @@ export interface MockSignResponse extends BaseApiResponse {
 // DC Parameter endpoints
 export interface GetDcParameterResponse extends BaseApiResponse {
   dcParameter: string;
+}
+
+// Debug endpoints
+export interface DebugPdfObjectsRequest {
+  pdfBase64: string;
+  /** Only return objects that look like signature dictionaries (/Type /Sig) */
+  onlySignatureObjects?: boolean;
+  /** Replace large stream bodies with a placeholder comment */
+  collapseStreams?: boolean;
+}
+export interface DebugPdfObjectsResponse extends BaseApiResponse {
+  /** Preformatted text of objects (e.g. "9 0 obj << ... >> endobj") */
+  objectsText: string;
+  /** Object numbers that contain /Type /Sig */
+  signatureObjectNumbers?: number[];
+}
+
+export interface DebugCmsRequest {
+  /** Pass a whole PDF; the server will extract /Contents <...> */
+  pdfBase64?: string;
+  /** Or pass CMS DER directly as base64 */
+  cmsDerBase64?: string;
+}
+export interface DebugCmsResponse extends BaseApiResponse {
+  summary: {
+    signedDataVersion: number;
+    digestAlgorithms: string[];
+    eContentType: string;
+    certificateCount: number;
+    signerSubject?: string;
+    hasTimestamp: boolean;
+    signedAttributeOids: string[];
+  };
+  /** Parsed ASN.1 tree (safe-to-serialize subset) */
+  asn1?: unknown;
 }

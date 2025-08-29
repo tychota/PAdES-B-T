@@ -1,16 +1,14 @@
-import { CodeHighlight } from "@mantine/code-highlight";
-import { Tabs, ScrollArea, Text } from "@mantine/core";
+import { Tabs, Text } from "@mantine/core";
 import { IconBug, IconFileText } from "@tabler/icons-react";
 import { useAtomValue } from "jotai";
-import { Virtuoso } from "react-virtuoso";
 
-import { logsAtom, workflowStateAtom } from "../store/atoms";
+import { logsAtom } from "../store/atoms";
 
-import { LogEntryView } from "./LogEntryView";
+import { DebugInspector } from "./DebugInspector";
+import { TerminalLogView } from "./TerminalLogView";
 
 export function LogPanel() {
   const logs = useAtomValue(logsAtom);
-  const workflowState = useAtomValue(workflowStateAtom);
 
   return (
     <Tabs defaultValue="logs">
@@ -24,37 +22,17 @@ export function LogPanel() {
       </Tabs.List>
 
       <Tabs.Panel value="logs" pt="xs">
-        <ScrollArea h={400}>
-          {logs.length === 0 ? (
-            <Text c="dimmed" ta="center" pt="xl">
-              Logs will appear here.
-            </Text>
-          ) : (
-            <Virtuoso
-              style={{ height: 400 }}
-              data={logs}
-              itemContent={(index, log) => <LogEntryView log={log} />}
-            />
-          )}
-        </ScrollArea>
+        {logs.length === 0 ? (
+          <Text c="dimmed" ta="center" pt="xl">
+            Logs will appear here.
+          </Text>
+        ) : (
+          <TerminalLogView />
+        )}
       </Tabs.Panel>
 
       <Tabs.Panel value="debugger" pt="xs">
-        <ScrollArea h={400}>
-          <CodeHighlight
-            language="json"
-            code={JSON.stringify(
-              workflowState,
-              (key: string, value: unknown): unknown => {
-                if (typeof value === "string" && value.length > 100) {
-                  return `${value.substring(0, 100)}...`;
-                }
-                return value;
-              },
-              2,
-            )}
-          />
-        </ScrollArea>
+        <DebugInspector />
       </Tabs.Panel>
     </Tabs>
   );

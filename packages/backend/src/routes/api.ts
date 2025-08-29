@@ -5,6 +5,7 @@ import { Router } from "express";
 import { padesBackendLogger, logPAdES } from "../logger";
 import { CMSService } from "../services/cms-service";
 import { fromBase64, toBase64 } from "../services/crypto-utils";
+import { dumpPdfObjects, extractCmsDer, parseCmsSummary } from "../services/debug-service";
 import { MockHSMService } from "../services/mock-hsm-service";
 import { PDFService } from "../services/pdf-service";
 import { SignatureService } from "../services/signature-service";
@@ -389,7 +390,7 @@ router.post("/pdf/finalize", async (req, res) => {
         signerCertPem: request.signerCertPem,
         certificateChainPem: request.certificateChainPem,
         signatureAlgorithmOid: request.signatureAlgorithmOid,
-        withTimestamp: true,
+        withTimestamp: request.withTimestamp !== false, // default true; allow B-B if explicitly false
       },
       serviceLogs,
     );
@@ -746,5 +747,56 @@ router.post("/mock/sign", async (req, res) => {
       logs,
     };
     res.status(500).json(response);
+  }
+});
+
+// DEBUG: dump PDF objects
+router.post("/debug/pdf-objects", (req, res) => {
+  try {
+    const {
+      pdfBase64,
+      onlySignatureObjects = false,
+      collapseStreams = true,
+    } = req.body as {
+      pdfBase64: string;
+      onlySignatureObjects?: boolean;
+      collapseStreams?: boolean;
+    };
+    const { objectsText, sigObjNos } = dumpPdfObjects({
+      pdfBase64,
+      onlySignatureObjects,
+      collapseStreams,
+    });
+    res.json({ success: true, objectsText, signatureObjectNumbers: sigObjNos });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(400).json({
+      success: false,
+      error: {
+        code: "DEBUG_PDF_OBJECTS_FAILED",
+        message: msg,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+});
+
+// DEBUG: parse CMS SignedData
+router.post("/debug/cms", (req, res) => {
+  try {
+    const { pdfBase64, cmsDerBase64 } = req.body as { pdfBase64?: string; cmsDerBase64?: string };
+    const cmsDer = extractCmsDer(pdfBase64, cmsDerBase64);
+    const out = parseCmsSummary(cmsDer);
+    res.json({ success: true, ...out });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(400).json({
+      success: false,
+      error: {
+        code: "DEBUG_CMS_FAILED",
+        message: msg,
+        timestamp: new Date().toISOString(),
+      },
+    });
   }
 });

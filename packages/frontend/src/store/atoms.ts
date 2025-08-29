@@ -41,10 +41,26 @@ export const selectedReaderAtom = atom<string | null>(null);
 export const icanopeeStatusAtom = atom<"idle" | "loading" | "error">("idle");
 export const icanopeeErrorAtom = atom<string | null>(null);
 
+// --- Debug Atoms ---
+export const debugPdfObjectsAtom = atom<string>("");
+export const debugCmsDataAtom = atom<{
+  signedDataVersion: number;
+  digestAlgorithms: string[];
+  eContentType: string;
+  certificateCount: number;
+  signerSubject?: string;
+  hasTimestamp: boolean;
+  signedAttributeOids: string[];
+} | null>(null);
+export const debugLoadingAtom = atom<boolean>(false);
+
 // --- Derived State Atoms ---
 
 export const pdfBase64Atom = atom(
-  (get) => get(workflowStateAtom).signedPdfBase64 || get(workflowStateAtom).pdfBase64,
+  (get) =>
+    get(workflowStateAtom).signedPdfBase64 ||
+    get(workflowStateAtom).preparedPdfBase64 ||
+    get(workflowStateAtom).pdfBase64,
 );
 
 export const canProceedAtom = atom<boolean>((get) => {
@@ -120,6 +136,13 @@ export const useIcanopee = () => {
   };
 };
 
+// UI preferences
+export const showLogTimestampsAtom = atom<boolean>(true);
+export const indentBackendLogsAtom = atom<boolean>(true);
+
+// Signature-level preference (B-B vs B-T)
+export const includeTimestampAtom = atom<boolean>(true);
+
 export const useWorkflowActions = () => {
   const setWorkflowState = useSetAtom(workflowStateAtom);
   const setLoading = useSetAtom(loadingAtom);
@@ -129,6 +152,7 @@ export const useWorkflowActions = () => {
   const signingMethod = useAtomValue(signingMethodAtom);
   const pin = useAtomValue(pinAtom);
   const selectedReader = useAtomValue(selectedReaderAtom);
+  const includeTimestamp = useAtomValue(includeTimestampAtom);
 
   const apiClient = new ApiClient();
   const icanopee = new IcanopeeService();
@@ -233,6 +257,7 @@ export const useWorkflowActions = () => {
             signatureB64: sigRes.signatureB64,
             signerCertPem: state.signerCertPem!,
             certificateChainPem: state.certificateChainPem,
+            withTimestamp: includeTimestamp, // control B-B (false) vs B-T (true)
           };
           const finalizeRes = await apiClient.finalizePDF(finalizeRequest);
           handleApiResponse(finalizeRes, "PDF finalized and timestamped.");

@@ -15,6 +15,9 @@ import type {
   MockSignResponse,
   PAdESError,
   LogEntry,
+  DebugPdfObjectsResponse,
+  DebugCmsRequest,
+  DebugCmsResponse,
 } from "@pades-poc/shared";
 
 interface ApiErrorResponse {
@@ -142,6 +145,24 @@ export class ApiClient {
       signerCertPem?: string;
       certificateChainPem?: string[];
     }> = await this.client.get("/mock/cert");
+    return response.data;
+  }
+
+  // NEW: Debug endpoints
+  async debugPdfObjects(
+    pdfBase64: string,
+    onlySignatureObjects = true,
+    collapseStreams = true,
+  ): Promise<DebugPdfObjectsResponse> {
+    const response: AxiosResponse<DebugPdfObjectsResponse> = await this.client.post(
+      "/debug/pdf-objects",
+      { pdfBase64, onlySignatureObjects, collapseStreams },
+    );
+    return response.data;
+  }
+
+  async debugCms(req: DebugCmsRequest): Promise<DebugCmsResponse> {
+    const response: AxiosResponse<DebugCmsResponse> = await this.client.post("/debug/cms", req);
     return response.data;
   }
 }
