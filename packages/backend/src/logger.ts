@@ -1,62 +1,79 @@
+// logger.ts
 import { PAdESLogger, padesLogger } from "@pades-poc/shared";
+import { config } from "dotenv";
 import winston from "winston";
 
 import type { LogEntry } from "@pades-poc/shared";
 
-// Custom levels so "success" & "warning" are first-class (and ordered)
+config();
+
+/** Custom levels so "success" & "warning" are first-class */
 const customLevels = {
-  levels: {
-    error: 0,
-    warning: 1,
-    success: 2,
-    info: 3,
-    debug: 4,
-  },
-  colors: {
-    error: "red",
-    warning: "yellow",
-    success: "green",
-    info: "blue",
-    debug: "gray",
-  },
-};
+  error: 0,
+  warning: 1,
+  success: 2,
+  info: 3,
+  debug: 4,
+} as const;
 
-winston.addColors(customLevels.colors);
+type LevelKey = keyof typeof customLevels;
 
-const envLevel = (process.env.LOG_LEVEL || "info") as keyof typeof customLevels.levels;
+winston.addColors({
+  error: "red",
+  warning: "yellow",
+  success: "green",
+  info: "blue",
+  debug: "gray",
+});
+
+/** Resolve env LOG_LEVEL with a tiny guard */
+const envLevel = ((): LevelKey => {
+  const raw = (process.env.LOG_LEVEL || "info").toLowerCase();
+  return (raw in customLevels ? raw : "info") as LevelKey;
+})();
+
 const isProd = process.env.NODE_ENV === "production";
 
+/** Single formatter (PAdES first, otherwise ts [LVL] msg) */
+const baseFormat = winston.format.printf((info) => {
+  // If a PAdES entry was passed, delegate to the shared formatter
+  if (info.padesEntry) {
+    return padesLogger.formatLogEntry(info.padesEntry as LogEntry);
+  }
+
+  const ts = typeof info.timestamp === "string" ? info.timestamp : new Date().toISOString();
+  // `info.level` is colorized by the Console transport (level-only)
+  const lvl = (info.level || "info").toUpperCase();
+  const msg = typeof info.message === "string" ? info.message : String(info.message);
+  return `${ts} [${lvl}] ${msg}`;
+});
+
+/** One logger, one format */
 export const logger = winston.createLogger({
-  levels: customLevels.levels,
-  level: envLevel, // base level (used if a transport doesn't override)
+  levels: customLevels,
+  level: envLevel,
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),
-    winston.format.printf((info) => {
-      // Prefer our PAdES formatting when present
-      if (info.padesEntry) {
-        const entry = info.padesEntry as LogEntry;
-        return padesLogger.formatLogEntry(entry);
-      }
-      const ts = typeof info.timestamp === "string" ? info.timestamp : new Date().toISOString();
-      const lvl = typeof info.level === "string" ? info.level.toUpperCase() : "INFO";
-      const msg = typeof info.message === "string" ? info.message : "Unknown message";
-      return `${ts} [${lvl}] ${msg}`;
-    }),
   ),
   transports: [
-    // Make the console transport respect LOG_LEVEL (this was the noisy one)
     new winston.transports.Console({
       level: envLevel,
       handleExceptions: true,
+      format: winston.format.combine(baseFormat, winston.format.colorize({ all: true })),
     }),
     ...(isProd
       ? [
           new winston.transports.File({
             filename: "logs/pades-audit.log",
             level: envLevel,
-            maxsize: 5 * 1024 * 1024, // 5MB
-            maxFiles: 5,
+            maxsize: 5 * 1024 * 1024,
+            maxFiles: 3,
+            format: winston.format.combine(
+              winston.format.timestamp(),
+              winston.format.errors({ stack: true }),
+              winston.format.json(),
+            ),
           }),
         ]
       : []),
@@ -64,30 +81,22 @@ export const logger = winston.createLogger({
   exitOnError: false,
 });
 
-const getLogLevel = (level: string | undefined): LogEntry["level"] => {
-  switch (level) {
-    case "debug":
-    case "info":
-    case "success": // now a real level
-    case "warning": // now a real level
-    case "error":
-      return level;
-    default:
-      return "info";
-  }
+/** Minimal env→PAdES level guard */
+const toPadesLevel = (lvl: string | undefined): LogEntry["level"] => {
+  const l = (lvl || "info").toLowerCase();
+  return (l in customLevels ? l : "info") as LogEntry["level"];
 };
 
-// Initialize PAdES logger with Winston integration
+/** PAdES logger (kept simple) */
 export const padesBackendLogger = new PAdESLogger({
-  level: getLogLevel(process.env.LOG_LEVEL),
+  level: toPadesLevel(process.env.LOG_LEVEL),
   includeTimestamp: true,
   includeSource: true,
-  formatJson: process.env.NODE_ENV === "production",
+  formatJson: isProd,
 });
 
-// Bridge that routes PAdES log entries through Winston with our custom levels
+/** Bridge: route PAdES entries through Winston with colorized level */
 export function logPAdES(entry: LogEntry): void {
-  // Ensure level exists on the logger
-  const lvl = entry.level as keyof typeof customLevels.levels;
-  logger.log(lvl, entry.message, { padesEntry: entry });
+  const lvl: LevelKey = (entry.level in customLevels ? entry.level : "info") as LevelKey;
+  logger.log(lvl, entry.message, { padesEntry: { ...entry, level: lvl } });
 }

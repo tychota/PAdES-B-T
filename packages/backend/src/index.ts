@@ -2,13 +2,13 @@ import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 
+// Load environment variables
+dotenv.config();
+
 import { logPAdES, padesBackendLogger } from "./logger";
 import { errorHandler } from "./middleware/error-handler";
 import { requestLogger } from "./middleware/request-logger";
 import { router as apiRouter } from "./routes/api";
-
-// Load environment variables
-dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
