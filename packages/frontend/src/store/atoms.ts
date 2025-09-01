@@ -2,6 +2,7 @@
 
 import { notifications } from "@mantine/notifications";
 import { atom, useAtomValue, useSetAtom } from "jotai";
+import { useMemo } from "react";
 
 import { ApiClient } from "../services/api";
 import { IcanopeeService } from "../services/icanopee";
@@ -155,7 +156,8 @@ export const useWorkflowActions = () => {
   const includeTimestamp = useAtomValue(includeTimestampAtom);
 
   const apiClient = new ApiClient();
-  const icanopee = new IcanopeeService();
+  // Use a single shared IcanopeeService instance to maintain session/card state
+  const icanopee = useMemo(() => new IcanopeeService(), []);
 
   const handleApiResponse = (response: { logs?: LogEntry[] }, successMessage: string) => {
     if (response.logs) addLogs(response.logs);
@@ -223,7 +225,16 @@ export const useWorkflowActions = () => {
             certRes = await apiClient.getMockCert();
           } else {
             if (!selectedReader) throw new Error("No CPS reader selected.");
-            const card = await icanopee.readCard(selectedReader, pin);
+
+            // Fixed: Connect to card first, then read it (following the working flow sequence)
+            const logCallback = (level: LogEntry["level"], message: string) =>
+              addLogs([{ timestamp: new Date().toISOString(), level, source: "cps", message }]);
+
+            // Step 1: Connect to card (calls hl_getcpxcard)
+            await icanopee.connectToCard(selectedReader, logCallback);
+
+            // Step 2: Read card info and certificate (calls hl_readcpxcard)
+            const card = await icanopee.readCard(selectedReader, pin, logCallback);
             certRes = { signerCertPem: card.certificate, certificateChainPem: [] };
           }
           if (!certRes.signerCertPem) throw new Error("Could not retrieve signer certificate.");
@@ -242,10 +253,19 @@ export const useWorkflowActions = () => {
             sigRes = await apiClient.mockSign(state.toBeSignedB64!);
           } else {
             if (!selectedReader) throw new Error("No CPS reader selected.");
+
+            // Ensure card is still connected before signing
+            const logCallback = (level: LogEntry["level"], message: string) =>
+              addLogs([{ timestamp: new Date().toISOString(), level, source: "cps", message }]);
+
+            // Re-connect to card before signing (card handle may have been lost)
+            await icanopee.connectToCard(selectedReader, logCallback);
+
             const { signature } = await icanopee.signWithCard(
               selectedReader,
               pin,
               state.toBeSignedB64!,
+              logCallback,
             );
             sigRes = { signatureB64: signature };
           }

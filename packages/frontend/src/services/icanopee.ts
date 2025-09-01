@@ -537,9 +537,8 @@ export class IcanopeeService {
     try {
       // s_commandName is not part of CPSSigningRequest, so we use a plain object
       const requestBody: Record<string, unknown> = {
-        s_commandName: "hl_signwithCPxcard",
+        s_commandName: "hl_signWithCpxCard",
         s_sessionId: session.sessionId,
-        s_readerName: readerName,
         s_pinCode: pin,
         s_stringToSign: dataToSign,
         i_digestType: 1, // SHA-256
