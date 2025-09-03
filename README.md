@@ -173,6 +173,18 @@ pnpm test
 5. Build project: `pnpm build`
 6. Submit pull request
 
+## ⚠️ Known Issues
+
+### Icanopee Sign API Encoding Issue
+
+The Icanopee sign API has a poorly designed encoding handling that causes issues with document signing. This affects the CPS card integration and can result in corrupted signatures.
+
+**Reproduction Script**: [`scripts/icanopee_encoding_issue.sh`](scripts/icanopee_encoding_issue.sh)
+
+**Live Demonstration**: [ASCIINEMA Recording](https://asciinema.org/a/R7CbcX7WHfYR0qbjRibN2Nrz8)
+
+This issue has been reported to the Icanopee team and affects the reliability of the CPS signing process.
+
 ## 📝 License
 
 MIT License - see LICENSE file for details.
