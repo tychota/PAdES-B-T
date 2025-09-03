@@ -18,6 +18,7 @@ import {
   SignedAndUnsignedAttributes,
 } from "pkijs";
 
+import { CertificateChainBuilder } from "./certificate-chain-builder";
 import { requestTimestamp as fetchTimestamp } from "./timestamp-service";
 
 import type { LogEntry } from "@pades-poc/shared";
@@ -195,6 +196,12 @@ function buildCMS(
 }
 
 export class CMSService {
+  private chainBuilder: CertificateChainBuilder;
+
+  constructor() {
+    this.chainBuilder = new CertificateChainBuilder();
+  }
+
   /**
    * Full CMS assembly (B-B or B-T depending on withTimestamp)
    */
@@ -209,11 +216,148 @@ export class CMSService {
       timestampUrl,
     } = params;
 
+    // Parse certificate to properly detect CPS certificates
+    let isCPSCertificate = false;
+    let certSubject = "";
+    let certIssuer = "";
+
+    try {
+      const certDer = pemToDer(signerCertPem);
+      const certAsn1 = asn1js.fromBER(certDer);
+      if (certAsn1.offset !== -1) {
+        const cert = new Certificate({ schema: certAsn1.result });
+        certSubject = cert.subject.typesAndValues
+          .map((tv) => `${tv.type}=${tv.value.valueBlock.value}`)
+          .join(", ");
+        certIssuer = cert.issuer.typesAndValues
+          .map((tv) => `${tv.type}=${tv.value.valueBlock.value}`)
+          .join(", ");
+
+        // Proper CPS detection based on certificate fields
+        isCPSCertificate =
+          certSubject.includes("ASIP-SANTE") ||
+          certSubject.includes("IGC-SANTE") ||
+          certIssuer.includes("ASIP-SANTE") ||
+          certIssuer.includes("IGC-SANTE") ||
+          certSubject.includes("CPS") ||
+          certIssuer.includes("CPS");
+      }
+    } catch (error) {
+      logs?.push({
+        timestamp: new Date().toISOString(),
+        level: "warning",
+        source: "backend",
+        message: "Failed to parse certificate for CPS detection",
+        context: {
+          error: error instanceof Error ? error.message : "Unknown error",
+          fallbackToStringSearch: true,
+        },
+      });
+
+      // Fallback to original string-based detection
+      isCPSCertificate =
+        signerCertPem.includes("ASIP-SANTE") ||
+        signerCertPem.includes("IGC-SANTE") ||
+        signerCertPem.includes("CPS");
+    }
+
+    // Enhanced diagnostic logging for CMS assembly
+    logs?.push({
+      timestamp: new Date().toISOString(),
+      level: "debug",
+      source: "backend",
+      message: "Starting CMS assembly",
+      context: {
+        signedAttrsDerSize: signedAttrsDer.length,
+        signedAttrsDerHex: signedAttrsDer.toString("hex").substring(0, 64) + "...",
+        signatureSize: signature.length,
+        signatureHex: signature.toString("hex").substring(0, 64) + "...",
+        signerCertPemLength: signerCertPem.length,
+        certificateChainCount: certificateChainPem.length,
+        signatureAlgorithmOid: signatureAlgorithmOid || "default",
+        withTimestamp,
+        timestampUrl: timestampUrl || "default",
+        isCPSCertificate,
+        certSubject,
+        certIssuer,
+        cpsDetectionMethod: certSubject ? "certificate-parsing" : "string-search",
+      },
+    });
+
+    // Build certificate chain for CPS certificates using AIA
+    let finalCertificateChain = certificateChainPem;
+    if (isCPSCertificate && certificateChainPem.length === 0) {
+      logs?.push({
+        timestamp: new Date().toISOString(),
+        level: "debug",
+        source: "backend",
+        message: "Building certificate chain for CPS certificate using AIA",
+        context: {
+          signerCertLength: signerCertPem.length,
+        },
+      });
+
+      try {
+        const chainResult = await this.chainBuilder.buildChain(signerCertPem, logs);
+        if (chainResult.success && chainResult.certificateChain.length > 1) {
+          // Exclude the end-entity certificate (first in chain) as it's already included
+          finalCertificateChain = chainResult.certificateChain.slice(1);
+
+          logs?.push({
+            timestamp: new Date().toISOString(),
+            level: "success",
+            source: "backend",
+            message: "Successfully built CPS certificate chain using AIA",
+            context: {
+              originalChainLength: certificateChainPem.length,
+              builtChainLength: finalCertificateChain.length,
+              totalChainLength: chainResult.certificateChain.length,
+            },
+          });
+        } else {
+          logs?.push({
+            timestamp: new Date().toISOString(),
+            level: "warning",
+            source: "backend",
+            message: "Failed to build complete CPS certificate chain",
+            context: {
+              success: chainResult.success,
+              errors: chainResult.errors,
+              chainLength: chainResult.certificateChain.length,
+            },
+          });
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : "Unknown error";
+        logs?.push({
+          timestamp: new Date().toISOString(),
+          level: "warning",
+          source: "backend",
+          message: "Certificate chain building failed",
+          context: {
+            error: errorMsg,
+            fallbackToOriginalChain: true,
+          },
+        });
+      }
+    }
+
     let unsignedAttrs: Attribute[] | undefined;
     let timestampInfo: CMSAssemblyResult["timestampInfo"];
 
     if (withTimestamp) {
       try {
+        logs?.push({
+          timestamp: new Date().toISOString(),
+          level: "debug",
+          source: "backend",
+          message: "Requesting timestamp from TSA",
+          context: {
+            signatureForTimestamp: signature.toString("hex").substring(0, 32) + "...",
+            tsaUrl: timestampUrl || "default",
+          },
+        });
+
         const ts = await fetchTimestamp({ data: signature, tsaUrl: timestampUrl });
         const tsAttr = new Attribute({
           type: "1.2.840.113549.1.9.16.2.14", // id-aa-signatureTimeStampToken
@@ -230,7 +374,11 @@ export class CMSService {
           level: "success",
           source: "backend",
           message: `Timestamp obtained from TSA: ${ts.tsaUrl}`,
-          context: { timestampTime: ts.timestampTime, accuracy: ts.accuracy },
+          context: {
+            timestampTime: ts.timestampTime,
+            accuracy: ts.accuracy,
+            timestampTokenSize: Buffer.from(ts.timestampToken.toBER(false)).length,
+          },
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Unknown error";
@@ -239,15 +387,33 @@ export class CMSService {
           level: "warning",
           source: "backend",
           message: `Timestamp request failed, continuing without (B-B): ${msg}`,
+          context: {
+            error: msg,
+            fallbackToBaseline: true,
+          },
         });
       }
     }
+
+    logs?.push({
+      timestamp: new Date().toISOString(),
+      level: "debug",
+      source: "backend",
+      message: "Proceeding to CMS structure building",
+      context: {
+        hasUnsignedAttrs: !!unsignedAttrs,
+        unsignedAttrsCount: unsignedAttrs?.length || 0,
+        signatureLevel: unsignedAttrs?.length ? "B-T" : "B-B",
+        finalCertificateChainCount: finalCertificateChain.length,
+        isCPSCertificate,
+      },
+    });
 
     const base = buildCMS({
       signedAttrsDer,
       signature,
       signerCertPem,
-      certificateChainPem,
+      certificateChainPem: finalCertificateChain,
       signatureAlgorithmOid,
       unsignedAttrs,
       logs,

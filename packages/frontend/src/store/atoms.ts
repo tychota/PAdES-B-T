@@ -249,22 +249,27 @@ export const useWorkflowActions = () => {
 
         case "finalize": {
           let sigRes = { signatureB64: "" };
+
           if (signingMethod === "mock") {
+            // Mock HSM signs the DER directly (unchanged)
             sigRes = await apiClient.mockSign(state.toBeSignedB64!);
           } else {
+            // CPS path: let the HSM hash + sign the SignedAttributes DER
             if (!selectedReader) throw new Error("No CPS reader selected.");
 
-            // Ensure card is still connected before signing
             const logCallback = (level: LogEntry["level"], message: string) =>
               addLogs([{ timestamp: new Date().toISOString(), level, source: "cps", message }]);
 
-            // Re-connect to card before signing (card handle may have been lost)
+            // Ensure card is connected
             await icanopee.connectToCard(selectedReader, logCallback);
 
+            // IMPORTANT: pass the SignedAttributes DER to the HSM and set preHashed = false
+            // so the device computes SHA-256(SignedAttributesDER) internally and signs it.
+            const signedAttrsDerB64 = state.signedAttrsDerB64!;
             const { signature } = await icanopee.signWithCard(
               selectedReader,
               pin,
-              state.toBeSignedB64!,
+              signedAttrsDerB64, // s_stringToSign: DER(SET OF Attribute), base64
               logCallback,
             );
             sigRes = { signatureB64: signature };
@@ -279,8 +284,10 @@ export const useWorkflowActions = () => {
             certificateChainPem: state.certificateChainPem,
             withTimestamp: includeTimestamp, // control B-B (false) vs B-T (true)
           };
+
           const finalizeRes = await apiClient.finalizePDF(finalizeRequest);
           handleApiResponse(finalizeRes, "PDF finalized and timestamped.");
+
           setWorkflowState({
             ...state,
             signedPdfBase64: finalizeRes.signedPdfBase64,

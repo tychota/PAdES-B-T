@@ -221,6 +221,12 @@ router.post("/pdf/presign", (req, res) => {
   const workflowId = generateShortId();
   const logs: LogEntry[] = [];
 
+  // Enhanced diagnostic logging for CPS workflow debugging
+  const isCPSWorkflow =
+    request.signerCertPem?.includes("ASIP-SANTE") ||
+    request.signerCertPem?.includes("IGC-SANTE") ||
+    request.signerCertPem?.includes("CPS");
+
   pushAndLog(
     logs,
     padesBackendLogger.logWorkflowStep(
@@ -229,7 +235,13 @@ router.post("/pdf/presign", (req, res) => {
       "presign",
       "PDF presign requested",
       workflowId,
-      { messageDigestPresent: !!request.messageDigestB64, certPresent: !!request.signerCertPem },
+      {
+        messageDigestPresent: !!request.messageDigestB64,
+        certPresent: !!request.signerCertPem,
+        isCPSWorkflow,
+        certLength: request.signerCertPem?.length || 0,
+        certPreview: request.signerCertPem?.substring(0, 200) + "..." || "none",
+      },
     ),
   );
 
@@ -268,6 +280,25 @@ router.post("/pdf/presign", (req, res) => {
 
     const messageDigest = fromBase64(request.messageDigestB64);
 
+    // Add detailed logging for CPS certificate processing
+    if (isCPSWorkflow) {
+      pushAndLog(
+        logs,
+        padesBackendLogger.logWorkflowStep(
+          "debug",
+          "backend",
+          "presign",
+          "Processing CPS certificate for signed attributes",
+          workflowId,
+          {
+            messageDigestHex: messageDigest.toString("hex"),
+            messageDigestSize: messageDigest.length,
+            certType: "CPS",
+          },
+        ),
+      );
+    }
+
     const serviceLogs: LogEntry[] = [];
     const result = signatureService.buildSignedAttributes(
       { messageDigest, signerCertPem: request.signerCertPem },
@@ -284,7 +315,11 @@ router.post("/pdf/presign", (req, res) => {
         "presign",
         "Signed attributes built",
         workflowId,
-        { derSize: result.signedAttrsDer.length },
+        {
+          derSize: result.signedAttrsDer.length,
+          derHex: result.signedAttrsDer.toString("hex").substring(0, 64) + "...",
+          isCPSWorkflow,
+        },
       ),
     );
 
@@ -298,6 +333,8 @@ router.post("/pdf/presign", (req, res) => {
     res.json(response);
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
+    const stack = error instanceof Error ? error.stack : undefined;
+
     pushAndLog(
       logs,
       padesBackendLogger.logWorkflowStep(
@@ -306,6 +343,11 @@ router.post("/pdf/presign", (req, res) => {
         "presign",
         `PDF presigning failed: ${msg}`,
         workflowId,
+        {
+          errorType: error?.constructor?.name || "Unknown",
+          errorStack: stack?.split("\n").slice(0, 5).join("\n") || "No stack",
+          isCPSWorkflow,
+        },
       ),
     );
 

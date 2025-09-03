@@ -76,6 +76,11 @@ export class CertificateChainValidator {
     let isValid = true;
     let trustedChain = false;
 
+    // Enhanced diagnostic logging for CPS certificate debugging
+    const signerSubject = this.getSubjectCN(signerCert);
+    const signerIssuer = this.getDNString(signerCert.issuer);
+    const signerSerial = Buffer.from(signerCert.serialNumber.valueBlock.valueHex).toString("hex");
+
     logs?.push({
       timestamp: new Date().toISOString(),
       level: "debug",
@@ -83,7 +88,19 @@ export class CertificateChainValidator {
       message: "Starting certificate chain validation",
       context: {
         totalCertificates: certificates.length,
-        signerSubject: this.getSubjectCN(signerCert),
+        signerSubject,
+        signerIssuer,
+        signerSerial,
+        signerValidFrom: signerCert.notBefore.value.toISOString(),
+        signerValidTo: signerCert.notAfter.value.toISOString(),
+        certificateDetails: certificates.map((cert, idx) => ({
+          index: idx,
+          subject: this.getSubjectCN(cert),
+          issuer: this.getDNString(cert.issuer),
+          serial: Buffer.from(cert.serialNumber.valueBlock.valueHex).toString("hex"),
+          validFrom: cert.notBefore.value.toISOString(),
+          validTo: cert.notAfter.value.toISOString(),
+        })),
       },
     });
 

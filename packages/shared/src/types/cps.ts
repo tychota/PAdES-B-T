@@ -38,7 +38,6 @@ export interface CPSSigningRequest {
   pinCode: string;
   digestType: number; // 1 = SHA-256
   stringToSign: string; // base64
-  preHashed?: boolean;
 }
 
 export interface CPSSigningResponse {

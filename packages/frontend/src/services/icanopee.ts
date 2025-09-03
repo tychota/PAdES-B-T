@@ -523,14 +523,13 @@ export class IcanopeeService {
     pin: string,
     dataToSign: string, // base64
     onLog?: (level: LogEntry["level"], message: string) => void,
-    preHashed = true,
   ): Promise<{ signature: string; certificate: string }> {
     const session = await this.ensureSession(onLog);
 
     this.log(
       "info",
       "Signing data with CPS card",
-      { readerName, dataSize: dataToSign.length, preHashed },
+      { readerName, dataSize: dataToSign.length },
       onLog,
     );
 
@@ -543,11 +542,6 @@ export class IcanopeeService {
         s_stringToSign: dataToSign,
         i_digestType: 1, // SHA-256
       };
-
-      // Add pre-hashed flag if supported
-      if (preHashed) {
-        requestBody.i_preHashed = 1;
-      }
 
       const response = await fetch(`${this.config.endpoint}/api/hl_signwithcpxcard`, {
         method: "POST",
@@ -624,7 +618,7 @@ export class IcanopeeService {
       const cardData = await this.readCard(readerName, pin, onLog);
 
       // Step 3: Sign data
-      const signingResult = await this.signWithCard(readerName, pin, dataToSign, onLog, true);
+      const signingResult = await this.signWithCard(readerName, pin, dataToSign, onLog);
 
       this.log(
         "success",
