@@ -57,3 +57,16 @@ test-results/
 
 # TypeScript
 *.tsbuildinfo
+
+# Scripts
+scripts/out.card.json
+scripts/out.getcpx.json
+scripts/out.isregistered.json
+scripts/out.open.json
+scripts/out.readers.json
+scripts/out.sign.json
+scripts/cert.pem
+scripts/dcparams.b64
+scripts/digest.local.b64
+scripts/pubkey.pem
+scripts/sig.bin
