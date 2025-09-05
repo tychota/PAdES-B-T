@@ -2,12 +2,19 @@
 
 import { notifications } from "@mantine/notifications";
 import { atom, useAtomValue, useSetAtom } from "jotai";
+import { atomWithStorage } from "jotai/utils";
 import { useMemo } from "react";
 
 import { ApiClient } from "../services/api";
 import { IcanopeeService } from "../services/icanopee";
 
-import type { LogEntry, PcscReader, FinalizeRequest } from "@pades-poc/shared";
+import type {
+  LogEntry,
+  PcscReader,
+  FinalizeRequest,
+  PKCS11SlotInfo,
+  PKCS11CertificateInfo,
+} from "@pades-poc/shared";
 
 // --- Base State Atoms ---
 export type WorkflowStep = "generate" | "preSign" | "sign" | "finalize" | "verify" | "completed";
@@ -35,12 +42,21 @@ export const workflowStateAtom = atom<WorkflowState>({
 export const pdfFileAtom = atom<File | null>(null);
 export const loadingAtom = atom<boolean>(false);
 export const logsAtom = atom<LogEntry[]>([]);
-export const signingMethodAtom = atom<"mock" | "cps">("mock");
-export const pinAtom = atom<string>("");
+// Persistent atoms with localStorage using jotai/utils
+export const signingMethodAtom = atomWithStorage<"mock" | "cps" | "pkcs11">("signingMethod", "pkcs11");
+export const pinAtom = atomWithStorage<string>("pin", "");
 export const availableReadersAtom = atom<PcscReader[]>([]);
-export const selectedReaderAtom = atom<string | null>(null);
+export const selectedReaderAtom = atomWithStorage<string | null>("selectedReader", null);
 export const icanopeeStatusAtom = atom<"idle" | "loading" | "error">("idle");
 export const icanopeeErrorAtom = atom<string | null>(null);
+
+// PKCS#11 atoms
+export const pkcs11SlotsAtom = atom<PKCS11SlotInfo[]>([]);
+export const selectedSlotAtom = atomWithStorage<number | null>("selectedSlot", null);
+export const pkcs11CertificatesAtom = atom<PKCS11CertificateInfo[]>([]);
+export const selectedCertificateAtom = atomWithStorage<string | null>("selectedCertificate", null);
+export const pkcs11StatusAtom = atom<"idle" | "loading" | "error">("idle");
+export const pkcs11ErrorAtom = atom<string | null>(null);
 
 // --- Debug Atoms ---
 export const debugPdfObjectsAtom = atom<string>("");
@@ -69,6 +85,8 @@ export const canProceedAtom = atom<boolean>((get) => {
   const signingMethod = get(signingMethodAtom);
   const pin = get(pinAtom);
   const selectedReader = get(selectedReaderAtom);
+  const selectedSlot = get(selectedSlotAtom);
+  const selectedCertificate = get(selectedCertificateAtom);
 
   switch (state.step) {
     case "generate":
@@ -79,7 +97,16 @@ export const canProceedAtom = atom<boolean>((get) => {
       return !!state.pdfBase64;
     case "sign":
       if (signingMethod === "mock") return !!state.messageDigestB64;
-      return !!state.messageDigestB64 && pin.length >= 4 && !!selectedReader;
+      if (signingMethod === "cps")
+        return !!state.messageDigestB64 && pin.length >= 4 && !!selectedReader;
+      if (signingMethod === "pkcs11")
+        return (
+          !!state.messageDigestB64 &&
+          pin.length >= 4 &&
+          selectedSlot !== null &&
+          !!selectedCertificate
+        );
+      return false;
     case "finalize":
       // do NOT require signature yet—it's created when you click Continue
       return (
@@ -137,12 +164,76 @@ export const useIcanopee = () => {
   };
 };
 
+export const usePKCS11 = () => {
+  const setStatus = useSetAtom(pkcs11StatusAtom);
+  const setError = useSetAtom(pkcs11ErrorAtom);
+  const setSlots = useSetAtom(pkcs11SlotsAtom);
+  const setCertificates = useSetAtom(pkcs11CertificatesAtom);
+  const addLogs = useSetAtom(addLogsAtom);
+  const apiClient = new ApiClient();
+
+  const getSlots = async () => {
+    setStatus("loading");
+    setError(null);
+    try {
+      const response = await apiClient.getPKCS11Slots();
+
+      if (response.logs) addLogs(response.logs);
+
+      if (!response.success) {
+        throw new Error(response.error?.message || "Failed to get PKCS#11 slots");
+      }
+
+      setSlots(response.slots);
+      if (response.slots.length === 0) {
+        throw new Error("No PKCS#11 slots found");
+      }
+      setStatus("idle");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Unknown PKCS#11 error";
+      setError(msg);
+      setStatus("error");
+    }
+  };
+
+  const getCertificates = async (slotId: number, pin?: string) => {
+    setStatus("loading");
+    setError(null);
+    try {
+      const response = await apiClient.getPKCS11Certificates({ slotId, pin });
+
+      if (response.logs) addLogs(response.logs);
+
+      if (!response.success) {
+        throw new Error(response.error?.message || "Failed to get PKCS#11 certificates");
+      }
+
+      setCertificates(response.certificates);
+      if (response.certificates.length === 0) {
+        throw new Error("No certificates found on token");
+      }
+      setStatus("idle");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Unknown PKCS#11 error";
+      setError(msg);
+      setStatus("error");
+    }
+  };
+
+  return {
+    getSlots,
+    getCertificates,
+    status: useAtomValue(pkcs11StatusAtom),
+    error: useAtomValue(pkcs11ErrorAtom),
+  };
+};
+
 // UI preferences
 export const showLogTimestampsAtom = atom<boolean>(true);
 export const indentBackendLogsAtom = atom<boolean>(true);
 
 // Signature-level preference (B-B vs B-T)
-export const includeTimestampAtom = atom<boolean>(true);
+export const includeTimestampAtom = atomWithStorage<boolean>("includeTimestamp", true);
 
 export const useWorkflowActions = () => {
   const setWorkflowState = useSetAtom(workflowStateAtom);
@@ -153,6 +244,8 @@ export const useWorkflowActions = () => {
   const signingMethod = useAtomValue(signingMethodAtom);
   const pin = useAtomValue(pinAtom);
   const selectedReader = useAtomValue(selectedReaderAtom);
+  const selectedSlot = useAtomValue(selectedSlotAtom);
+  const selectedCertificate = useAtomValue(selectedCertificateAtom);
   const includeTimestamp = useAtomValue(includeTimestampAtom);
 
   const apiClient = new ApiClient();
@@ -223,7 +316,7 @@ export const useWorkflowActions = () => {
           let certRes: { signerCertPem?: string; certificateChainPem?: string[] } = {};
           if (signingMethod === "mock") {
             certRes = await apiClient.getMockCert();
-          } else {
+          } else if (signingMethod === "cps") {
             if (!selectedReader) throw new Error("No CPS reader selected.");
 
             // Fixed: Connect to card first, then read it (following the working flow sequence)
@@ -236,7 +329,29 @@ export const useWorkflowActions = () => {
             // Step 2: Read card info and certificate (calls hl_readcpxcard)
             const card = await icanopee.readCard(selectedReader, pin, logCallback);
             certRes = { signerCertPem: card.certificate, certificateChainPem: [] };
+          } else if (signingMethod === "pkcs11") {
+            if (selectedSlot === null) throw new Error("No PKCS#11 slot selected.");
+            if (!selectedCertificate) throw new Error("No certificate selected.");
+
+            // Get certificates from the selected slot to find the matching one
+            const response = await apiClient.getPKCS11Certificates({ slotId: selectedSlot, pin });
+
+            if (response.logs) addLogs(response.logs);
+            if (!response.success) {
+              throw new Error(response.error?.message || "Failed to get certificates");
+            }
+
+            const selectedCert = response.certificates.find(
+              (certItem: PKCS11CertificateInfo) => certItem.label === selectedCertificate,
+            );
+            if (!selectedCert)
+              throw new Error(`Selected certificate not found: ${selectedCertificate}`);
+
+            certRes = { signerCertPem: selectedCert.certificatePem, certificateChainPem: [] };
+          } else {
+            throw new Error(`Unknown signing method: ${signingMethod as string}`);
           }
+
           if (!certRes.signerCertPem) throw new Error("Could not retrieve signer certificate.");
           const presignRes = await apiClient.presignPDF({
             messageDigestB64: state.messageDigestB64!,
@@ -253,7 +368,7 @@ export const useWorkflowActions = () => {
           if (signingMethod === "mock") {
             // Mock HSM signs the DER directly (unchanged)
             sigRes = await apiClient.mockSign(state.toBeSignedB64!);
-          } else {
+          } else if (signingMethod === "cps") {
             // CPS path: let the HSM hash + sign the SignedAttributes DER
             if (!selectedReader) throw new Error("No CPS reader selected.");
 
@@ -273,6 +388,29 @@ export const useWorkflowActions = () => {
               logCallback,
             );
             sigRes = { signatureB64: signature };
+          } else if (signingMethod === "pkcs11") {
+            // PKCS#11 path: proper binary signing with native PKCS#11
+            if (selectedSlot === null) throw new Error("No PKCS#11 slot selected.");
+            if (!selectedCertificate) throw new Error("No certificate selected.");
+
+            const signedAttrsDerB64 = state.signedAttrsDerB64!;
+
+            // Call the backend PKCS#11 signing API
+            const response = await apiClient.signWithPKCS11({
+              slotId: selectedSlot,
+              pin,
+              dataToSignB64: signedAttrsDerB64, // DER(signedAttributes) in base64
+              certificateFilter: { label: selectedCertificate },
+            });
+
+            if (response.logs) addLogs(response.logs);
+            if (!response.success) {
+              throw new Error(response.error?.message || "PKCS#11 signing failed");
+            }
+
+            sigRes = { signatureB64: response.signatureB64 };
+          } else {
+            throw new Error(`Unknown signing method: ${signingMethod as string}`);
           }
 
           const finalizeRequest: FinalizeRequest = {

@@ -5,6 +5,7 @@ export * from "./types/signature";
 export * from "./types/api";
 export * from "./types/verification";
 export * from "./types/cps";
+export * from "./types/pkcs11";
 export * from "./constants";
 export * from "./utils";
 export * from "./services/logger";

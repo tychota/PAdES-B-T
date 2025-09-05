@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 
 import { PDFWorkflow } from "./components/PDFWorkflow";
 import { SigningMethodToggle } from "./components/SigningMethodToggle";
+import { TSAToggle } from "./components/TSAToggle";
 import { ApiClient } from "./services/api";
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
@@ -41,9 +42,10 @@ function App() {
       <AppShell header={{ height: 60 }} padding="md">
         <AppShell.Header>
           <Group h="100%" px="md" justify="space-between">
-            <Group>
+            <Group gap="xl">
               <Title order={3}>PAdES POC</Title>
               <SigningMethodToggle />
+              <TSAToggle />
             </Group>
             <Badge
               size="lg"
@@ -51,7 +53,7 @@ function App() {
               color={status.color}
               leftSection={<IconHeartbeat size={16} />}
             >
-              Server status: {status.label}
+              SERVER STATUS: {status.label}
             </Badge>
           </Group>
         </AppShell.Header>

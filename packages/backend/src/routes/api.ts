@@ -8,6 +8,7 @@ import { fromBase64, toBase64 } from "../services/crypto-utils";
 import { dumpPdfObjects, extractCmsDer, parseCmsSummary } from "../services/debug-service";
 import { MockHSMService } from "../services/mock-hsm-service";
 import { PDFService } from "../services/pdf-service";
+import { PKCS11Service } from "../services/pkcs11-service";
 import { SignatureService } from "../services/signature-service";
 import { VerificationService } from "../services/verification-service";
 
@@ -35,6 +36,24 @@ const pdfService = new PDFService();
 const mockHSM = new MockHSMService();
 const signatureService = new SignatureService();
 const cmsService = new CMSService();
+
+// PKCS#11 service (initialized on-demand)
+let pkcs11Service: PKCS11Service | null = null;
+
+const getPKCS11Service = (): PKCS11Service => {
+  if (!pkcs11Service) {
+    const libraryPath = process.env.PKCS11_LIBRARY_PATH;
+    if (!libraryPath) {
+      throw new Error("PKCS11_LIBRARY_PATH environment variable not set");
+    }
+    
+    pkcs11Service = new PKCS11Service({
+      libraryPath,
+      debug: process.env.NODE_ENV === "development",
+    });
+  }
+  return pkcs11Service;
+};
 
 // Init Mock HSM
 void mockHSM.ready
@@ -839,6 +858,203 @@ router.post("/debug/cms", (req, res) => {
         message: msg,
         timestamp: new Date().toISOString(),
       },
+    });
+  }
+});
+
+// PKCS#11: Get available slots
+router.get("/pkcs11/slots", async (req, res) => {
+  const workflowId = generateShortId();
+  const logs: LogEntry[] = [];
+
+  pushAndLog(
+    logs,
+    padesBackendLogger.createLogEntry("info", "pkcs11", "PKCS#11 slots requested", { workflowId })
+  );
+
+  try {
+    const pkcs11 = getPKCS11Service();
+    await pkcs11.initialize(logs);
+    const slots = pkcs11.getSlots(logs);
+
+    pushAndLog(
+      logs,
+      padesBackendLogger.createLogEntry("success", "pkcs11", "PKCS#11 slots retrieved", {
+        workflowId,
+        slotCount: slots.length,
+      })
+    );
+
+    res.json({
+      success: true,
+      slots,
+      logs,
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    pushAndLog(
+      logs,
+      padesBackendLogger.createLogEntry("error", "pkcs11", `PKCS#11 slots failed: ${msg}`, { workflowId })
+    );
+
+    res.status(500).json({
+      success: false,
+      error: { code: "PKCS11_SLOTS_FAILED", message: msg, timestamp: new Date().toISOString() },
+      logs,
+    });
+  }
+});
+
+// PKCS#11: Get certificates from slot
+router.post("/pkcs11/certificates", async (req, res) => {
+  const { slotId, pin } = req.body as { slotId: number; pin?: string };
+  const workflowId = generateShortId();
+  const logs: LogEntry[] = [];
+
+  pushAndLog(
+    logs,
+    padesBackendLogger.createLogEntry("info", "pkcs11", "PKCS#11 certificates requested", {
+      workflowId,
+      slotId,
+      pinProvided: !!pin,
+    })
+  );
+
+  try {
+    const pkcs11 = getPKCS11Service();
+    await pkcs11.initialize(logs);
+    pkcs11.openSession(slotId, logs);
+
+    if (pin) {
+      pkcs11.login(pin, logs);
+    }
+
+    const certificates = pkcs11.findCertificates(logs);
+
+    pushAndLog(
+      logs,
+      padesBackendLogger.createLogEntry("success", "pkcs11", "PKCS#11 certificates retrieved", {
+        workflowId,
+        certificateCount: certificates.length,
+      })
+    );
+
+    res.json({
+      success: true,
+      certificates: certificates.map(cert => ({
+        label: cert.label,
+        subject: cert.subject,
+        issuer: cert.issuer,
+        serialNumber: cert.serialNumber,
+        certificatePem: cert.certificatePem,
+      })),
+      logs,
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    pushAndLog(
+      logs,
+      padesBackendLogger.createLogEntry("error", "pkcs11", `PKCS#11 certificates failed: ${msg}`, { workflowId })
+    );
+
+    res.status(500).json({
+      success: false,
+      error: { code: "PKCS11_CERTIFICATES_FAILED", message: msg, timestamp: new Date().toISOString() },
+      logs,
+    });
+  }
+});
+
+// PKCS#11: Sign data (replaces the problematic Icanopee string API)
+router.post("/pkcs11/sign", async (req, res) => {
+  const {
+    slotId,
+    pin,
+    dataToSignB64,
+    certificateFilter,
+  } = req.body as {
+    slotId: number;
+    pin: string;
+    dataToSignB64: string; // DER(signedAttributes) in base64
+    certificateFilter?: { label?: string; subject?: string };
+  };
+  
+  const workflowId = generateShortId();
+  const logs: LogEntry[] = [];
+
+  pushAndLog(
+    logs,
+    padesBackendLogger.createLogEntry("info", "pkcs11", "PKCS#11 signing requested", {
+      workflowId,
+      slotId,
+      dataSize: Buffer.from(dataToSignB64 || "", "base64").length,
+      hasFilter: !!certificateFilter,
+    })
+  );
+
+  try {
+    if (!dataToSignB64 || !pin) {
+      const response = {
+        success: false,
+        error: {
+          code: "MISSING_PARAMETER",
+          message: "dataToSignB64 and pin are required",
+          timestamp: new Date().toISOString(),
+        },
+        logs,
+      };
+      res.status(400).json(response);
+      return;
+    }
+
+    const dataToSign = fromBase64(dataToSignB64);
+    
+    pushAndLog(
+      logs,
+      padesBackendLogger.createLogEntry("debug", "pkcs11", "Signing DER data with PKCS#11", {
+        workflowId,
+        dataHex: dataToSign.toString("hex").substring(0, 64) + "...",
+        dataSize: dataToSign.length,
+      })
+    );
+
+    const pkcs11 = getPKCS11Service();
+    const result = await pkcs11.findAndSign(dataToSign, slotId, pin, certificateFilter, logs);
+
+    pushAndLog(
+      logs,
+      padesBackendLogger.createLogEntry("success", "pkcs11", "PKCS#11 signing completed", {
+        workflowId,
+        signatureSize: result.signature.length,
+        certificateSubject: result.certificate.subject,
+        algorithm: result.algorithm,
+      })
+    );
+
+    res.json({
+      success: true,
+      signatureB64: toBase64(result.signature),
+      signerCertPem: result.certificate.certificatePem,
+      signatureAlgorithmOid: result.algorithm,
+      certificate: {
+        label: result.certificate.label,
+        subject: result.certificate.subject,
+        issuer: result.certificate.issuer,
+        serialNumber: result.certificate.serialNumber,
+      },
+      logs,
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    pushAndLog(
+      logs,
+      padesBackendLogger.createLogEntry("error", "pkcs11", `PKCS#11 signing failed: ${msg}`, { workflowId })
+    );
+
+    res.status(500).json({
+      success: false,
+      error: { code: "PKCS11_SIGNING_FAILED", message: msg, timestamp: new Date().toISOString() },
+      logs,
     });
   }
 });

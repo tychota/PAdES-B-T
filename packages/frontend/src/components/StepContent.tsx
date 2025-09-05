@@ -2,26 +2,16 @@
 
 import {
   FileInput,
-  SegmentedControl,
-  PasswordInput,
-  Select,
   Stack,
   Text,
   Alert,
 } from "@mantine/core";
-import { IconAlertCircle, IconUpload } from "@tabler/icons-react";
+import { IconUpload } from "@tabler/icons-react";
 import { useAtom, useAtomValue } from "jotai";
-import { useEffect } from "react";
 
 import {
-  availableReadersAtom,
   pdfFileAtom,
-  pinAtom,
-  selectedReaderAtom,
-  signingMethodAtom,
   workflowStateAtom,
-  useIcanopee,
-  includeTimestampAtom,
 } from "../store/atoms";
 import { getStepIndex } from "../utils/workflow";
 
@@ -32,20 +22,7 @@ const DEFAULT_WIDGET_RECT: [number, number, number, number] = [300, 50, 545, 150
 
 export function StepContent() {
   const workflowState = useAtomValue(workflowStateAtom);
-  const [signingMethod, setSigningMethod] = useAtom(signingMethodAtom);
-  const [pin, setPin] = useAtom(pinAtom);
-  const [readers] = useAtom(availableReadersAtom);
-  const [selectedReader, setSelectedReader] = useAtom(selectedReaderAtom);
   const [pdfFile, setPdfFile] = useAtom(pdfFileAtom);
-  const [includeTimestamp, setIncludeTimestamp] = useAtom(includeTimestampAtom);
-
-  const { getReaders, status, error } = useIcanopee();
-
-  useEffect(() => {
-    if (signingMethod === "cps" && readers.length === 0 && status === "idle") {
-      void getReaders();
-    }
-  }, [signingMethod, readers.length, getReaders, status]);
 
   // Content for PDF Generation (upload OR generate)
   if (workflowState.step === "generate") {
@@ -165,41 +142,11 @@ export function StepContent() {
           </Text>
         </Alert>
 
-        <SegmentedControl
-          fullWidth
-          value={signingMethod}
-          onChange={(value) => setSigningMethod(value as "mock" | "cps")}
-          data={[
-            { label: "Mock HSM (Test)", value: "mock" },
-            { label: "CPS Card", value: "cps" },
-          ]}
-        />
-
-        {signingMethod === "cps" && (
-          // ... (your CPS UI unchanged)
-          <Stack mt="md">
-            {error && (
-              <Alert color="red" title="Icanopee Error" icon={<IconAlertCircle />}>
-                {error}
-              </Alert>
-            )}
-            <PasswordInput
-              label="CPS Card PIN"
-              placeholder="Enter your 4-8 digit PIN"
-              value={pin}
-              onChange={(event) => setPin(event.currentTarget.value)}
-              maxLength={8}
-            />
-            <Select
-              label="Select Card Reader"
-              placeholder={status === "loading" ? "Searching..." : "Choose a reader"}
-              data={readers.map((r) => ({ value: r.s_name, label: r.s_name }))}
-              value={selectedReader}
-              onChange={setSelectedReader}
-              disabled={status === "loading" || readers.length === 0}
-            />
-          </Stack>
-        )}
+        <Alert color="green" title="Ready to Sign">
+          <Text component="p" size="sm">
+            Your signing method is configured in the header. Click "Continue to Finalize" to proceed with signing using your selected method.
+          </Text>
+        </Alert>
 
         {hasPrepared ? (
           <>
@@ -249,14 +196,11 @@ export function StepContent() {
             computed. Changing any signed byte would break messageDigest verification.
           </Text>
         </Alert>
-        <SegmentedControl
-          data={[
-            { label: "PAdES B-B (no TSA)", value: "bb" },
-            { label: "PAdES B-T (with TSA)", value: "bt" },
-          ]}
-          value={includeTimestamp ? "bt" : "bb"}
-          onChange={(v) => setIncludeTimestamp(v === "bt")}
-        />
+        <Alert color="green" title="TSA Configuration">
+          <Text component="p" size="sm">
+            Timestamp preference (PAdES B-B vs B-T) is configured in the header.
+          </Text>
+        </Alert>
         <Text size="sm" c="dimmed">
           Current inputs: SignedAttrs DER size ≈ {workflowState.signedAttrsDerB64?.length ?? 0}{" "}
           chars, signature will be embedded in CMS and injected into /Contents.

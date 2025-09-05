@@ -37,7 +37,7 @@ export function PdfObjectInspector() {
     setLoading(true);
     const api = new ApiClient();
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+       
       const response = await api.debugPdfObjects(pdf, true);
 
       // Extract data using type assertions to work around TypeScript issues

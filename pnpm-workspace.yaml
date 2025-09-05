@@ -6,6 +6,7 @@ link-workspace-packages: deep
 onlyBuiltDependencies:
   - canvas
   - esbuild
+  - pkcs11js
   - unrs-resolver
 
 prefer-workspace-packages: true

@@ -7,7 +7,7 @@ export type LogLevel = "debug" | "info" | "success" | "warning" | "error";
 export interface LogEntry {
   timestamp: string;
   level: LogLevel;
-  source: "backend" | "frontend" | "external" | "cps" | "mock-hsm";
+  source: "backend" | "frontend" | "external" | "cps" | "mock-hsm" | "pkcs11";
   message: string;
   context?: Record<string, unknown>;
 }
