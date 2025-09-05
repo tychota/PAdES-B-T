@@ -76,7 +76,7 @@ export class PKCS11Service {
     this.config = {
       slotIndex: 0,
       tokenLabel: "",
-      debug: true,
+      debug: false,
       ...config,
     };
   }
@@ -155,7 +155,12 @@ export class PKCS11Service {
 
         try {
           // Convert Handle to number for interface compatibility first
-          const slotIdNum = typeof slotId === "number" ? slotId : Buffer.isBuffer(slotId) ? slotId.readUInt32LE(0) : parseInt(String(slotId), 10);
+          const slotIdNum =
+            typeof slotId === "number"
+              ? slotId
+              : Buffer.isBuffer(slotId)
+                ? slotId.readUInt32LE(0)
+                : parseInt(String(slotId), 10);
 
           const slotInfo = this.pkcs11.C_GetSlotInfo(slotId);
           const tokenPresent = (slotInfo.flags & 0x00000001) !== 0; // CKF_TOKEN_PRESENT = 0x00000001
@@ -180,7 +185,7 @@ export class PKCS11Service {
             tokenInfo: tokenInfo
               ? {
                   label: String(tokenInfo.label || "").trim(),
-                  manufacturerId: String(tokenInfo.manufacturerId || "").trim(),
+                  manufacturerId: String(tokenInfo.manufacturerID || "").trim(),
                   model: String(tokenInfo.model || "").trim(),
                   serialNumber: String(tokenInfo.serialNumber || "").trim(),
                 }
@@ -197,7 +202,12 @@ export class PKCS11Service {
 
           slotInfos.push(slotInfoResult);
         } catch (slotError) {
-          const slotIdNum = typeof slotId === "number" ? slotId : Buffer.isBuffer(slotId) ? slotId.readUInt32LE(0) : parseInt(String(slotId), 10);
+          const slotIdNum =
+            typeof slotId === "number"
+              ? slotId
+              : Buffer.isBuffer(slotId)
+                ? slotId.readUInt32LE(0)
+                : parseInt(String(slotId), 10);
           this.log(logs, "warning", `Failed to get info for slot ${slotIdNum}`, {
             error: slotError instanceof Error ? slotError.message : String(slotError),
           });
@@ -282,7 +292,7 @@ export class PKCS11Service {
 
     try {
       // Try different approaches to find certificates
-      
+
       // Find certificate objects using the correct method
       this.pkcs11.C_FindObjectsInit(this.session, [
         { type: 0x00000000, value: 1 }, // CKA_CLASS = CKO_CERTIFICATE
@@ -295,27 +305,27 @@ export class PKCS11Service {
         type: typeof rawHandles,
         isBuffer: Buffer.isBuffer(rawHandles),
         length: rawHandles ? rawHandles.length : 0,
-        raw: rawHandles
+        raw: rawHandles,
       });
 
       // Parse the handles - C_FindObjects returns a Buffer containing concatenated handles
       // Each handle is 8 bytes
       let certHandles: Buffer[] = [];
-      
+
       if (Buffer.isBuffer(rawHandles) && rawHandles.length > 0) {
         const handleCount = rawHandles.length / 8;
         this.log(logs, "debug", "Parsing certificate handles", {
           bufferLength: rawHandles.length,
-          handleCount: handleCount
+          handleCount: handleCount,
         });
-        
+
         for (let i = 0; i < handleCount; i++) {
           const handle = rawHandles.subarray(i * 8, (i + 1) * 8);
           certHandles.push(handle);
-          
+
           this.log(logs, "debug", `Certificate handle ${i}`, {
             handle: handle,
-            hex: handle.toString('hex')
+            hex: handle.toString("hex"),
           });
         }
       } else if (Array.isArray(rawHandles)) {
@@ -331,7 +341,7 @@ export class PKCS11Service {
             this.log(logs, "debug", "Processing certificate", {
               handleType: typeof handle,
               handleLength: Buffer.isBuffer(handle) ? handle.length : "N/A",
-              handle: handle
+              handle: handle,
             });
 
             // First, verify this is actually a certificate by checking its class
@@ -340,37 +350,33 @@ export class PKCS11Service {
               classAttrs = this.pkcs11.C_GetAttributeValue(
                 this.session,
                 handle,
-                [{ type: 0x00000000 }] // CKA_CLASS
+                [{ type: 0x00000000 }], // CKA_CLASS
               );
               const objClass = classAttrs[0].value.readUInt32LE(0);
               this.log(logs, "debug", "Object class check", {
                 class: objClass,
                 isCertificate: objClass === 1,
                 isPrivateKey: objClass === 3,
-                isPublicKey: objClass === 2
+                isPublicKey: objClass === 2,
               });
-              
+
               if (objClass !== 1) {
                 this.log(logs, "debug", "Skipping non-certificate object", { class: objClass });
                 continue;
               }
             } catch (classError) {
               this.log(logs, "warning", "Failed to get object class", {
-                error: classError instanceof Error ? classError.message : "Unknown"
+                error: classError instanceof Error ? classError.message : "Unknown",
               });
               continue;
             }
 
             // Try getting certificate attributes with correct PKCS#11 constants
-            const attrs = this.pkcs11.C_GetAttributeValue(
-              this.session,
-              handle,
-              [
-                { type: 0x00000011 }, // CKA_VALUE = 0x11
-                { type: 0x00000003 }, // CKA_LABEL = 0x03  
-                { type: 0x00000102 }, // CKA_ID = 0x102
-              ],
-            );
+            const attrs = this.pkcs11.C_GetAttributeValue(this.session, handle, [
+              { type: 0x00000011 }, // CKA_VALUE = 0x11
+              { type: 0x00000003 }, // CKA_LABEL = 0x03
+              { type: 0x00000102 }, // CKA_ID = 0x102
+            ]);
 
             const certDer = attrs[0].value;
             const label = attrs[1].value.toString().trim();
@@ -446,18 +452,31 @@ export class PKCS11Service {
       const privateKeys: PKCS11PrivateKey[] = [];
 
       if (keyHandles && keyHandles.length > 0) {
-        for (const handle of keyHandles) {
+        // Parse the handles - C_FindObjects can return either a Buffer or Handle[]
+        let handleArray: Buffer[] = [];
+
+        if (Buffer.isBuffer(keyHandles)) {
+          // If it's a Buffer, parse it as concatenated 8-byte handles
+          const handleCount = keyHandles.length / 8;
+          for (let i = 0; i < handleCount; i++) {
+            handleArray.push(keyHandles.subarray(i * 8, (i + 1) * 8));
+          }
+        } else {
+          // If it's an array, convert each handle to Buffer if needed
+          const handles = keyHandles as Buffer[];
+          handleArray = handles.map((handle: Buffer | number) =>
+            Buffer.isBuffer(handle) ? handle : Buffer.from([handle]),
+          );
+        }
+
+        for (const handle of handleArray) {
           try {
-            const attrs = this.pkcs11.C_GetAttributeValue(
-              this.session,
-              Buffer.isBuffer(handle) ? handle : Buffer.from([handle]),
-              [
-                { type: 3 }, // CKA_LABEL = 3
-                { type: 4 }, // CKA_ID = 4
-                { type: 0x00000100 }, // CKA_KEY_TYPE = 0x00000100
-                { type: 0x00000108 }, // CKA_SIGN = 0x00000108
-              ],
-            );
+            const attrs = this.pkcs11.C_GetAttributeValue(this.session, handle, [
+              { type: 3 }, // CKA_LABEL = 3
+              { type: 4 }, // CKA_ID = 4
+              { type: 0x00000100 }, // CKA_KEY_TYPE = 0x00000100
+              { type: 0x00000108 }, // CKA_SIGN = 0x00000108
+            ]);
 
             const label = attrs[0].value.toString().trim();
             const id = attrs[1].value;
@@ -465,7 +484,7 @@ export class PKCS11Service {
             const canSign = attrs[3].value[0] === 1;
 
             privateKeys.push({
-              handle: Buffer.isBuffer(handle) ? handle : Buffer.from([handle]),
+              handle,
               label,
               id,
               keyType,
@@ -476,7 +495,7 @@ export class PKCS11Service {
               label,
               keyType: keyType === 0x00000000 ? "RSA" : `Unknown(${keyType})`, // CKK_RSA = 0x00000000
               canSign,
-              handle: handle.toString(),
+              handle: handle.toString("hex"),
             });
           } catch (keyError) {
             this.log(logs, "warning", "Failed to process private key", {
@@ -511,8 +530,8 @@ export class PKCS11Service {
     try {
       // Find matching private key by ID
       this.log(logs, "debug", "Searching for private key", {
-        certificateIdHex: certificateId.toString('hex'),
-        certificateIdLength: certificateId.length
+        certificateIdHex: certificateId.toString("hex"),
+        certificateIdLength: certificateId.length,
       });
 
       this.pkcs11.C_FindObjectsInit(this.session, [
@@ -527,12 +546,16 @@ export class PKCS11Service {
         keyHandlesType: typeof keyHandles,
         keyHandlesLength: keyHandles ? keyHandles.length : 0,
         keyHandlesIsArray: Array.isArray(keyHandles),
-        keyHandles: keyHandles
+        keyHandles: keyHandles,
       });
 
       if (!keyHandles || keyHandles.length === 0) {
         // Try to find all private keys to see what's available
-        this.log(logs, "debug", "No private key found with certificate ID, listing all private keys");
+        this.log(
+          logs,
+          "debug",
+          "No private key found with certificate ID, listing all private keys",
+        );
         this.pkcs11.C_FindObjectsInit(this.session, [
           { type: 0x00000000, value: 3 }, // CKA_CLASS = 0, CKO_PRIVATE_KEY = 3
         ]);
@@ -541,7 +564,7 @@ export class PKCS11Service {
 
         this.log(logs, "debug", "All available private keys", {
           count: allKeyHandles ? allKeyHandles.length : 0,
-          handles: allKeyHandles
+          handles: allKeyHandles,
         });
 
         throw new Error("No matching private key found for certificate");
@@ -553,12 +576,15 @@ export class PKCS11Service {
         privateKeyHandle = keyHandles.subarray(0, 8);
         this.log(logs, "debug", "Using parsed private key handle", {
           handle: privateKeyHandle,
-          hex: privateKeyHandle.toString('hex')
+          hex: privateKeyHandle.toString("hex"),
         });
       } else {
-        privateKeyHandle = keyHandles[0];
+        // Convert handle to Buffer if it's not already
+        const rawHandle = keyHandles[0];
+        privateKeyHandle = Buffer.isBuffer(rawHandle) ? rawHandle : Buffer.from([rawHandle]);
         this.log(logs, "debug", "Using direct private key handle", {
-          handle: privateKeyHandle
+          handle: privateKeyHandle,
+          hex: privateKeyHandle.toString("hex"),
         });
       }
 
@@ -581,24 +607,23 @@ export class PKCS11Service {
         certHandle = certHandles.subarray(0, 8);
         this.log(logs, "debug", "Using parsed certificate handle", {
           handle: certHandle,
-          hex: certHandle.toString('hex')
+          hex: certHandle.toString("hex"),
         });
       } else {
-        certHandle = certHandles[0];
+        // Convert handle to Buffer if it's not already
+        const rawHandle = certHandles[0];
+        certHandle = Buffer.isBuffer(rawHandle) ? rawHandle : Buffer.from([rawHandle]);
         this.log(logs, "debug", "Using direct certificate handle", {
-          handle: certHandle
+          handle: certHandle,
+          hex: certHandle.toString("hex"),
         });
       }
 
       // Get certificate for result
-      const certAttrs = this.pkcs11.C_GetAttributeValue(
-        this.session,
-        certHandle,
-        [
-          { type: 0x00000011 }, // CKA_VALUE = 0x11
-          { type: 0x00000003 }, // CKA_LABEL = 0x03
-        ],
-      );
+      const certAttrs = this.pkcs11.C_GetAttributeValue(this.session, certHandle, [
+        { type: 0x00000011 }, // CKA_VALUE = 0x11
+        { type: 0x00000003 }, // CKA_LABEL = 0x03
+      ]);
 
       const certDer = certAttrs[0].value;
       const certLabel = certAttrs[1].value.toString().trim();
@@ -621,14 +646,10 @@ export class PKCS11Service {
       this.log(logs, "debug", "Initializing signing operation", {
         mechanism: "CKM_SHA256_RSA_PKCS",
         privateKeyHandle: privateKeyHandle,
-        privateKeyHandleHex: privateKeyHandle.toString('hex')
+        privateKeyHandleHex: privateKeyHandle.toString("hex"),
       });
-      
-      this.pkcs11.C_SignInit(
-        this.session,
-        mechanism,
-        privateKeyHandle,
-      );
+
+      this.pkcs11.C_SignInit(this.session, mechanism, privateKeyHandle);
 
       // Perform signing operation
       const signature = this.pkcs11.C_Sign(this.session, data, Buffer.alloc(256)); // RSA-2048 produces 256-byte signature
@@ -787,10 +808,6 @@ export class PKCS11Service {
 
     if (logs) {
       logs.push(entry);
-    }
-
-    if (this.config.debug) {
-      console.log(`[${level.toUpperCase()}] PKCS11: ${message}`, context || "");
     }
   }
 }
