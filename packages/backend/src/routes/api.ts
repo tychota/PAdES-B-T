@@ -235,7 +235,7 @@ router.post("/pdf/prepare", async (req, res) => {
 });
 
 // Presign
-router.post("/pdf/presign", (req, res) => {
+router.post("/pdf/presign", async (req, res) => {
   const request = req.body as PresignRequest;
   const workflowId = generateShortId();
   const logs: LogEntry[] = [];
@@ -273,8 +273,8 @@ router.post("/pdf/presign", (req, res) => {
           message: "messageDigestB64 is required",
           timestamp: new Date().toISOString(),
         },
-        toBeSignedB64: "",
         signedAttrsDerB64: "",
+        expectedDigestB64: "",
         logs,
       };
       res.status(400).json(response);
@@ -289,8 +289,8 @@ router.post("/pdf/presign", (req, res) => {
           message: "signerCertPem is required for PAdES presigning",
           timestamp: new Date().toISOString(),
         },
-        toBeSignedB64: "",
         signedAttrsDerB64: "",
+        expectedDigestB64: "",
         logs,
       };
       res.status(400).json(response);
@@ -342,10 +342,14 @@ router.post("/pdf/presign", (req, res) => {
       ),
     );
 
+    // Calculate SHA-256 digest for CPS validation
+    const { sha256 } = await import("../services/crypto-utils");
+    const expectedDigest = sha256(result.signedAttrsDer);
+
     const response: PresignResponse & { logs: LogEntry[] } = {
       success: true,
-      toBeSignedB64: toBase64(result.signedAttrsDer),
       signedAttrsDerB64: toBase64(result.signedAttrsDer),
+      expectedDigestB64: toBase64(expectedDigest),
       logs,
     };
 
@@ -377,8 +381,8 @@ router.post("/pdf/presign", (req, res) => {
         message: msg,
         timestamp: new Date().toISOString(),
       },
-      toBeSignedB64: "",
       signedAttrsDerB64: "",
+      expectedDigestB64: "",
       logs,
     };
     res.status(500).json(response);

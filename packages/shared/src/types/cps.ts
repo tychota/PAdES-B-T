@@ -37,12 +37,14 @@ export interface CPSSigningRequest {
   readerName: string;
   pinCode: string;
   digestType: number; // 1 = SHA-256
-  stringToSign: string; // base64
+  dataToSignInBase64: string; // base64 - NEW API field
 }
 
 export interface CPSSigningResponse {
   status: "OK" | "ERROR";
   signature?: string; // base64
+  /** @deprecated Auth signature not used - only signature certificate is needed */
+  authSignature?: string; // base64 - Returned by API but not used
   signatureCertificate?: string; // PEM
   digest?: string; // base64
   apiErrorCode?: number;

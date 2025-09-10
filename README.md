@@ -175,15 +175,20 @@ pnpm test
 
 ## ⚠️ Known Issues
 
-### Icanopee Sign API Encoding Issue
+### Icanopee Sign API Encoding Issue ✅ **RESOLVED**
 
-The Icanopee sign API has a poorly designed encoding handling that causes issues with document signing. This affects the CPS card integration and can result in corrupted signatures.
+~~The Icanopee sign API has a poorly designed encoding handling that causes issues with document signing. This affects the CPS card integration and can result in corrupted signatures.~~
 
-**Reproduction Script**: [`scripts/icanopee_encoding_issue.sh`](scripts/icanopee_encoding_issue.sh)
+**✅ FIXED**: Updated integration to use the new `s_dataToSignInBase64` API that properly handles binary data encoding. The application now:
+- Uses `s_dataToSignInBase64` instead of `s_stringToSign` for proper binary data handling
+- Implements digest validation to ensure data integrity between server and CPS device
+- Supports both signature and auth certificates returned by the API
+
+**Reproduction Script**: [`scripts/icanopee_encoding_issue.sh`](scripts/icanopee_encoding_issue.sh) - Updated to demonstrate both old and new APIs
 
 **Live Demonstration**: [ASCIINEMA Recording](https://asciinema.org/a/R7CbcX7WHfYR0qbjRibN2Nrz8)
 
-This issue has been reported to the Icanopee team and affects the reliability of the CPS signing process.
+The encoding issue has been resolved with the new API implementation and enhanced validation.
 
 ## 📝 License
 

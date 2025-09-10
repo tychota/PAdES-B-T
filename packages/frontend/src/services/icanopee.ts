@@ -75,7 +75,9 @@ interface ReadCardResponse extends ApiResponseBase {
 interface SignWithCardResponse extends ApiResponseBase {
   s_status?: string;
   s_signature?: string;
+  s_authSignature?: string;
   s_signatureCertificate?: string;
+  s_digest?: string;
 }
 
 function isObject(val: unknown): val is Record<string, unknown> {
@@ -523,7 +525,7 @@ export class IcanopeeService {
     pin: string,
     dataToSign: string, // base64
     onLog?: (level: LogEntry["level"], message: string) => void,
-  ): Promise<{ signature: string; certificate: string }> {
+  ): Promise<{ signature: string; certificate: string; digest?: string }> {
     const session = await this.ensureSession(onLog);
 
     this.log(
@@ -534,12 +536,12 @@ export class IcanopeeService {
     );
 
     try {
-      // s_commandName is not part of CPSSigningRequest, so we use a plain object
+      // Use the new API with s_dataToSignInBase64 instead of s_stringToSign
       const requestBody: Record<string, unknown> = {
         s_commandName: "hl_signWithCpxCard",
         s_sessionId: session.sessionId,
         s_pinCode: pin,
-        s_stringToSign: dataToSign,
+        s_dataToSignInBase64: dataToSign,
         i_digestType: 1, // SHA-256
       };
 
@@ -581,6 +583,8 @@ export class IcanopeeService {
         signature: data.s_signature,
         certificate:
           typeof data.s_signatureCertificate === "string" ? data.s_signatureCertificate : "",
+        digest: typeof data.s_digest === "string" ? data.s_digest : undefined,
+        // Note: s_authSignature is returned by API but not used
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
@@ -606,6 +610,7 @@ export class IcanopeeService {
   ): Promise<{
     signature: string;
     certificate: string;
+    digest?: string;
     cardInfo: CPSCardInfo;
   }> {
     this.log("info", "Starting complete CPS signing workflow", { readerName }, onLog);
@@ -634,6 +639,7 @@ export class IcanopeeService {
       return {
         signature: signingResult.signature,
         certificate: signingResult.certificate || cardData.certificate,
+        digest: signingResult.digest,
         cardInfo: cardData,
       };
     } catch (error) {
