@@ -5,25 +5,31 @@
 Before considering any task complete, Claude MUST run the following commands and ensure they pass:
 
 ### 1. ESLint (Required)
+
 ```bash
 pnpm lint:check
 ```
+
 - This command checks for linting issues without auto-fixing
 - All linting errors must be resolved before task completion
 - If issues are found, run `pnpm lint` to auto-fix where possible
 
 ### 2. Unit Tests (Required)
+
 ```bash
 pnpm test
 ```
+
 - All existing tests must continue to pass
 - New functionality should include appropriate test coverage
 - For coverage reports, use `pnpm test:coverage`
 
 ### 3. Type Checking (Required)
+
 ```bash
 pnpm run build
 ```
+
 - TypeScript compilation must succeed without errors
 - All type issues must be resolved
 - This command builds the entire project and validates TypeScript
@@ -45,7 +51,8 @@ pnpm run build
 ## Project Structure Notes
 
 This is a monorepo with packages in the `packages/` directory:
-- Backend: `@pades-poc/backend` 
+
+- Backend: `@pades-poc/backend`
 - Frontend: `@pades-poc/frontend`
 
 Use `pnpm --filter <package-name> <command>` for package-specific operations.

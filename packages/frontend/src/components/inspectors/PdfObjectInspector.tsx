@@ -37,7 +37,6 @@ export function PdfObjectInspector() {
     setLoading(true);
     const api = new ApiClient();
     try {
-       
       const response = await api.debugPdfObjects(pdf, true);
 
       // Extract data using type assertions to work around TypeScript issues

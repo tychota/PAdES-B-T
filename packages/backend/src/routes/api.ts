@@ -46,7 +46,7 @@ const getPKCS11Service = (): PKCS11Service => {
     if (!libraryPath) {
       throw new Error("PKCS11_LIBRARY_PATH environment variable not set");
     }
-    
+
     pkcs11Service = new PKCS11Service({
       libraryPath,
       debug: process.env.NODE_ENV === "development",
@@ -873,7 +873,7 @@ router.get("/pkcs11/slots", async (req, res) => {
 
   pushAndLog(
     logs,
-    padesBackendLogger.createLogEntry("info", "pkcs11", "PKCS#11 slots requested", { workflowId })
+    padesBackendLogger.createLogEntry("info", "pkcs11", "PKCS#11 slots requested", { workflowId }),
   );
 
   try {
@@ -886,7 +886,7 @@ router.get("/pkcs11/slots", async (req, res) => {
       padesBackendLogger.createLogEntry("success", "pkcs11", "PKCS#11 slots retrieved", {
         workflowId,
         slotCount: slots.length,
-      })
+      }),
     );
 
     res.json({
@@ -898,7 +898,9 @@ router.get("/pkcs11/slots", async (req, res) => {
     const msg = error instanceof Error ? error.message : "Unknown error";
     pushAndLog(
       logs,
-      padesBackendLogger.createLogEntry("error", "pkcs11", `PKCS#11 slots failed: ${msg}`, { workflowId })
+      padesBackendLogger.createLogEntry("error", "pkcs11", `PKCS#11 slots failed: ${msg}`, {
+        workflowId,
+      }),
     );
 
     res.status(500).json({
@@ -921,7 +923,7 @@ router.post("/pkcs11/certificates", async (req, res) => {
       workflowId,
       slotId,
       pinProvided: !!pin,
-    })
+    }),
   );
 
   try {
@@ -940,12 +942,12 @@ router.post("/pkcs11/certificates", async (req, res) => {
       padesBackendLogger.createLogEntry("success", "pkcs11", "PKCS#11 certificates retrieved", {
         workflowId,
         certificateCount: certificates.length,
-      })
+      }),
     );
 
     res.json({
       success: true,
-      certificates: certificates.map(cert => ({
+      certificates: certificates.map((cert) => ({
         label: cert.label,
         subject: cert.subject,
         issuer: cert.issuer,
@@ -958,12 +960,18 @@ router.post("/pkcs11/certificates", async (req, res) => {
     const msg = error instanceof Error ? error.message : "Unknown error";
     pushAndLog(
       logs,
-      padesBackendLogger.createLogEntry("error", "pkcs11", `PKCS#11 certificates failed: ${msg}`, { workflowId })
+      padesBackendLogger.createLogEntry("error", "pkcs11", `PKCS#11 certificates failed: ${msg}`, {
+        workflowId,
+      }),
     );
 
     res.status(500).json({
       success: false,
-      error: { code: "PKCS11_CERTIFICATES_FAILED", message: msg, timestamp: new Date().toISOString() },
+      error: {
+        code: "PKCS11_CERTIFICATES_FAILED",
+        message: msg,
+        timestamp: new Date().toISOString(),
+      },
       logs,
     });
   }
@@ -971,18 +979,13 @@ router.post("/pkcs11/certificates", async (req, res) => {
 
 // PKCS#11: Sign data (replaces the problematic Icanopee string API)
 router.post("/pkcs11/sign", async (req, res) => {
-  const {
-    slotId,
-    pin,
-    dataToSignB64,
-    certificateFilter,
-  } = req.body as {
+  const { slotId, pin, dataToSignB64, certificateFilter } = req.body as {
     slotId: number;
     pin: string;
     dataToSignB64: string; // DER(signedAttributes) in base64
     certificateFilter?: { label?: string; subject?: string };
   };
-  
+
   const workflowId = generateShortId();
   const logs: LogEntry[] = [];
 
@@ -993,7 +996,7 @@ router.post("/pkcs11/sign", async (req, res) => {
       slotId,
       dataSize: Buffer.from(dataToSignB64 || "", "base64").length,
       hasFilter: !!certificateFilter,
-    })
+    }),
   );
 
   try {
@@ -1012,14 +1015,14 @@ router.post("/pkcs11/sign", async (req, res) => {
     }
 
     const dataToSign = fromBase64(dataToSignB64);
-    
+
     pushAndLog(
       logs,
       padesBackendLogger.createLogEntry("debug", "pkcs11", "Signing DER data with PKCS#11", {
         workflowId,
         dataHex: dataToSign.toString("hex").substring(0, 64) + "...",
         dataSize: dataToSign.length,
-      })
+      }),
     );
 
     const pkcs11 = getPKCS11Service();
@@ -1032,7 +1035,7 @@ router.post("/pkcs11/sign", async (req, res) => {
         signatureSize: result.signature.length,
         certificateSubject: result.certificate.subject,
         algorithm: result.algorithm,
-      })
+      }),
     );
 
     res.json({
@@ -1052,7 +1055,9 @@ router.post("/pkcs11/sign", async (req, res) => {
     const msg = error instanceof Error ? error.message : "Unknown error";
     pushAndLog(
       logs,
-      padesBackendLogger.createLogEntry("error", "pkcs11", `PKCS#11 signing failed: ${msg}`, { workflowId })
+      padesBackendLogger.createLogEntry("error", "pkcs11", `PKCS#11 signing failed: ${msg}`, {
+        workflowId,
+      }),
     );
 
     res.status(500).json({

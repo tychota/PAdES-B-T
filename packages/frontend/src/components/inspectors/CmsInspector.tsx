@@ -33,7 +33,7 @@ export function CmsInspector() {
     const api = new ApiClient();
     try {
       // Make the API call and handle the response
-       
+
       const response = await api.debugCms({ pdfBase64: pdf });
 
       // Extract data using type assertions to work around TypeScript issues

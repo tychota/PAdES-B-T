@@ -23,7 +23,7 @@ export function WorkflowActions({ onReset }: WorkflowActionsProps) {
 
   if (workflowState.step === "completed") {
     return (
-      <Button onClick={onReset} fullWidth>
+      <Button color="red" variant="light" onClick={onReset} fullWidth>
         Start New Workflow
       </Button>
     );

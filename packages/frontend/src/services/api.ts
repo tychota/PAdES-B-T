@@ -173,39 +173,46 @@ export class ApiClient {
 
   // PKCS#11: Get available slots
   async getPKCS11Slots(): Promise<PKCS11SlotsResponse & { logs?: LogEntry[] }> {
-    const response: AxiosResponse<PKCS11SlotsResponse & { logs?: LogEntry[] }> = 
+    const response: AxiosResponse<PKCS11SlotsResponse & { logs?: LogEntry[] }> =
       await this.client.get("/pkcs11/slots");
     return response.data;
   }
 
   // PKCS#11: Get certificates from slot
-  async getPKCS11Certificates(request: PKCS11CertificatesRequest): Promise<PKCS11CertificatesResponse & { logs?: LogEntry[] }> {
-    const response: AxiosResponse<PKCS11CertificatesResponse & { logs?: LogEntry[] }> = 
+  async getPKCS11Certificates(
+    request: PKCS11CertificatesRequest,
+  ): Promise<PKCS11CertificatesResponse & { logs?: LogEntry[] }> {
+    const response: AxiosResponse<PKCS11CertificatesResponse & { logs?: LogEntry[] }> =
       await this.client.post("/pkcs11/certificates", request);
     return response.data;
   }
 
   // PKCS#11: Sign data
-  async signWithPKCS11(request: PKCS11SigningRequest): Promise<PKCS11SigningResponse & { logs?: LogEntry[] }> {
-    const response: AxiosResponse<PKCS11SigningResponse & { logs?: LogEntry[] }> = 
+  async signWithPKCS11(
+    request: PKCS11SigningRequest,
+  ): Promise<PKCS11SigningResponse & { logs?: LogEntry[] }> {
+    const response: AxiosResponse<PKCS11SigningResponse & { logs?: LogEntry[] }> =
       await this.client.post("/pkcs11/sign", request);
     return response.data;
   }
 
   // Generic fetch method for custom endpoints
-  async fetch(url: string, options?: {
-    method?: string;
-    headers?: Record<string, string>;
-    body?: string;
-  }): Promise<unknown> {
+  async fetch(
+    url: string,
+    options?: {
+      method?: string;
+      headers?: Record<string, string>;
+      body?: string;
+    },
+  ): Promise<unknown> {
     const method = options?.method ?? "GET";
     const config = {
       method: method.toLowerCase(),
       url,
       headers: options?.headers ?? {},
-      data: options?.body ? JSON.parse(options.body) as unknown : undefined,
+      data: options?.body ? (JSON.parse(options.body) as unknown) : undefined,
     };
-    
+
     const response = await this.client.request(config);
     return response.data as unknown;
   }

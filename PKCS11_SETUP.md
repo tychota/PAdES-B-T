@@ -5,6 +5,7 @@ This document explains how to set up the new PKCS#11 flow for proper CPS card si
 ## Overview
 
 The PKCS#11 implementation provides:
+
 - **Native binary signing**: Properly handles binary DER data instead of base64 strings
 - **Standard PKCS#11 interface**: Uses pkcs11js for direct hardware token access
 - **Better reliability**: Bypasses Icanopee middleware issues with string encoding
@@ -15,6 +16,7 @@ The PKCS#11 implementation provides:
 ### 1. Install PKCS#11 Library
 
 **On macOS:**
+
 ```bash
 # For CPS cards via CryptoTokenKit (recommended)
 export PKCS11_LIBRARY_PATH="/System/Library/Frameworks/CryptoTokenKit.framework/Libraries/libykcs11.dylib"
@@ -25,6 +27,7 @@ export PKCS11_LIBRARY_PATH="/System/Library/Frameworks/CryptoTokenKit.framework/
 ```
 
 **On Linux:**
+
 ```bash
 # Install OpenSC
 sudo apt-get install opensc-pkcs11  # Ubuntu/Debian
@@ -37,6 +40,7 @@ export PKCS11_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so"
 ### 2. Backend Configuration
 
 Add to your `.env` file:
+
 ```bash
 # PKCS#11 library path (required)
 PKCS11_LIBRARY_PATH="/System/Library/Frameworks/CryptoTokenKit.framework/Libraries/libykcs11.dylib"
@@ -63,34 +67,38 @@ pnpm dev
 
 ## Key Differences from Icanopee
 
-| Aspect | Icanopee (CPS) | PKCS#11 |
-|--------|----------------|---------|
-| **Data handling** | String-based (base64) | Binary (proper DER) |
-| **API** | Custom JSON API | Standard PKCS#11 |
-| **Reliability** | String encoding issues | Native binary operations |
-| **Performance** | HTTP middleware overhead | Direct hardware access |
-| **Standards compliance** | Vendor-specific | Industry standard |
+| Aspect                   | Icanopee (CPS)           | PKCS#11                  |
+| ------------------------ | ------------------------ | ------------------------ |
+| **Data handling**        | String-based (base64)    | Binary (proper DER)      |
+| **API**                  | Custom JSON API          | Standard PKCS#11         |
+| **Reliability**          | String encoding issues   | Native binary operations |
+| **Performance**          | HTTP middleware overhead | Direct hardware access   |
+| **Standards compliance** | Vendor-specific          | Industry standard        |
 
 ## Troubleshooting
 
 ### Common Issues
 
 **"PKCS#11 library not found"**
+
 - Verify the `PKCS11_LIBRARY_PATH` environment variable
 - Check that the library file exists and is readable
 - On macOS, ensure CryptoTokenKit is available
 
 **"No slots found"**
+
 - Ensure your CPS card is properly inserted
 - Check that the card reader is connected
 - Try refreshing the slots list
 
 **"Login failed"**
+
 - Verify your PIN is correct
 - Ensure the token is not locked
 - Check that the selected slot has a token present
 
 **"No certificates found"**
+
 - Confirm you've logged in with the correct PIN
 - Verify the token contains valid certificates
 - Check that certificates are not expired
@@ -98,6 +106,7 @@ pnpm dev
 ### Debug Information
 
 Enable debug logging by setting:
+
 ```bash
 NODE_ENV=development
 ```
@@ -119,8 +128,9 @@ Hardware Token (CPS Card)
 ```
 
 The new flow ensures that:
+
 1. **Binary data integrity**: DER(signedAttributes) is passed as Buffer, not string
-2. **Native hashing**: Hardware performs SHA-256 hashing internally  
+2. **Native hashing**: Hardware performs SHA-256 hashing internally
 3. **Standard compliance**: Uses RFC 7292 PKCS#11 standard interface
 4. **No middleware**: Direct communication with hardware token
 
@@ -129,6 +139,6 @@ The new flow ensures that:
 - ✅ **Fixes Icanopee string encoding bug**: Binary data stays binary
 - ✅ **Standard PKCS#11 compliance**: Industry-standard interface
 - ✅ **Better error handling**: Clear PKCS#11 error codes
-- ✅ **Performance**: No HTTP middleware overhead  
+- ✅ **Performance**: No HTTP middleware overhead
 - ✅ **Reliability**: Direct hardware communication
 - ✅ **Future-proof**: Standard interface works with any PKCS#11 token

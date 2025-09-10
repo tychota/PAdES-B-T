@@ -1,18 +1,10 @@
 // packages/frontend/src/components/StepContent.tsx
 
-import {
-  FileInput,
-  Stack,
-  Text,
-  Alert,
-} from "@mantine/core";
+import { FileInput, Stack, Text, Alert } from "@mantine/core";
 import { IconUpload } from "@tabler/icons-react";
 import { useAtom, useAtomValue } from "jotai";
 
-import {
-  pdfFileAtom,
-  workflowStateAtom,
-} from "../store/atoms";
+import { pdfFileAtom, workflowStateAtom } from "../store/atoms";
 import { getStepIndex } from "../utils/workflow";
 
 import { PdfActionsBar } from "./PDFActionBar";
@@ -42,11 +34,13 @@ export function StepContent() {
 
         <Alert color="blue" title="What happens now">
           <Text component="p" size="sm" mb="md">
-            <strong>Document Selection Phase:</strong> This step loads the source e-prescription PDF that will receive a <strong>PAdES-compliant</strong> digital signature.
+            <strong>Document Selection Phase:</strong> This step loads the source e-prescription PDF
+            that will receive a <strong>PAdES-compliant</strong> digital signature.
           </Text>
 
           <Text component="p" size="sm" mb="md">
-            No cryptographic operations occur yet—we're simply preparing the document for the signing workflow according to <strong>ETSI EN 319 142</strong> (PAdES standard).
+            No cryptographic operations occur yet—we're simply preparing the document for the
+            signing workflow according to <strong>ETSI EN 319 142</strong> (PAdES standard).
           </Text>
 
           <Text component="p" size="sm" mb="sm">
@@ -61,7 +55,9 @@ export function StepContent() {
           </Text>
 
           <Text component="p" size="sm" c="dimmed">
-            <em>Compliance target:</em> <strong>PAdES B-LTA</strong> profile for maximum long-term archival compliance, ensuring legal evidentiary value ("force probante") per French healthcare regulations.
+            <em>Compliance target:</em> <strong>PAdES B-LTA</strong> profile for maximum long-term
+            archival compliance, ensuring legal evidentiary value ("force probante") per French
+            healthcare regulations.
           </Text>
         </Alert>
 
@@ -90,11 +86,26 @@ export function StepContent() {
 
         <Alert color="blue" title="What happens now">
           <Text component="p" size="sm" mb="md">
-            <strong>PDF Signature Preparation:</strong> We insert a <strong>signature placeholder</strong> within the PDF structure and establish the critical <pre style={{display: 'inline', background: '#f8f9fa', padding: '2px 4px', borderRadius: '3px'}}>/ByteRange</pre> array.
+            <strong>PDF Signature Preparation:</strong> We insert a{" "}
+            <strong>signature placeholder</strong> within the PDF structure and establish the
+            critical{" "}
+            <pre
+              style={{
+                display: "inline",
+                background: "#f8f9fa",
+                padding: "2px 4px",
+                borderRadius: "3px",
+              }}
+            >
+              /ByteRange
+            </pre>{" "}
+            array.
           </Text>
 
           <Text component="p" size="sm" mb="md">
-            A <strong>SHA-256 messageDigest</strong> is computed over the protected byte ranges. This hash becomes part of the <strong>CMS SignedAttributes</strong> (RFC 5652), ensuring any document modification breaks verification.
+            A <strong>SHA-256 messageDigest</strong> is computed over the protected byte ranges.
+            This hash becomes part of the <strong>CMS SignedAttributes</strong> (RFC 5652), ensuring
+            any document modification breaks verification.
           </Text>
 
           <Text component="p" size="sm" mb="sm">
@@ -105,13 +116,20 @@ export function StepContent() {
           <Text component="p" size="sm" mb="md">
             <strong>Output:</strong>
             <br />• Prepared PDF with signature placeholder
-            <br />• ByteRange array: {workflowState.byteRange ? `[${workflowState.byteRange.join(', ')}]` : '[start₁, length₁, start₂, length₂]'}
-            <br />• SHA-256 messageDigest: {workflowState.messageDigestB64 ? `${workflowState.messageDigestB64.length} chars (base64)` : 'pending calculation'}
+            <br />• ByteRange array:{" "}
+            {workflowState.byteRange
+              ? `[${workflowState.byteRange.join(", ")}]`
+              : "[start₁, length₁, start₂, length₂]"}
+            <br />• SHA-256 messageDigest:{" "}
+            {workflowState.messageDigestB64
+              ? `${workflowState.messageDigestB64.length} chars (base64)`
+              : "pending calculation"}
           </Text>
 
           {!hasPrepared ? (
             <Text component="p" size="sm" c="dimmed">
-              <em>Next step:</em> Click "Continue to Sign" to execute preparation. The resulting PDF preserves exact byte offsets required for incremental update compliance.
+              <em>Next step:</em> Click "Continue to Sign" to execute preparation. The resulting PDF
+              preserves exact byte offsets required for incremental update compliance.
             </Text>
           ) : null}
         </Alert>
@@ -151,36 +169,100 @@ export function StepContent() {
         <Text fw={500}>3. Choose Signing Method</Text>
         <Alert color="blue" title="What happens now">
           <Text component="p" size="sm" mb="md">
-            <strong>CMS SignedAttributes Construction:</strong> We build the cryptographic container following <strong>RFC 5652</strong> with exactly three mandatory attributes:
+            <strong>CMS SignedAttributes Construction:</strong> We build the cryptographic container
+            following <strong>RFC 5652</strong> with exactly three mandatory attributes:
           </Text>
 
-          <Text component="div" size="sm" mb="md" style={{marginLeft: '16px'}}>
-            • <pre style={{display: 'inline', background: '#f8f9fa', padding: '2px 4px', borderRadius: '3px'}}>content-type</pre> → <code>id-data</code> (OID: 1.2.840.113549.1.7.1)
-            <br />• <pre style={{display: 'inline', background: '#f8f9fa', padding: '2px 4px', borderRadius: '3px'}}>message-digest</pre> → SHA-256 hash from ByteRange
-            <br />• <pre style={{display: 'inline', background: '#f8f9fa', padding: '2px 4px', borderRadius: '3px'}}>signing-certificate-v2</pre> → Hash of signer certificate (prevents substitution attacks)
+          <Text component="div" size="sm" mb="md" style={{ marginLeft: "16px" }}>
+            •{" "}
+            <pre
+              style={{
+                display: "inline",
+                background: "#f8f9fa",
+                padding: "2px 4px",
+                borderRadius: "3px",
+              }}
+            >
+              content-type
+            </pre>{" "}
+            → <code>id-data</code> (OID: 1.2.840.113549.1.7.1)
+            <br />•{" "}
+            <pre
+              style={{
+                display: "inline",
+                background: "#f8f9fa",
+                padding: "2px 4px",
+                borderRadius: "3px",
+              }}
+            >
+              message-digest
+            </pre>{" "}
+            → SHA-256 hash from ByteRange
+            <br />•{" "}
+            <pre
+              style={{
+                display: "inline",
+                background: "#f8f9fa",
+                padding: "2px 4px",
+                borderRadius: "3px",
+              }}
+            >
+              signing-certificate-v2
+            </pre>{" "}
+            → Hash of signer certificate (prevents substitution attacks)
           </Text>
 
           <Text component="p" size="sm" mb="sm">
             <strong>Input:</strong>
-            <br />• Prepared PDF with ByteRange: {workflowState.byteRange ? `[${workflowState.byteRange.join(', ')}]` : 'pending'}
-            <br />• SHA-256 messageDigest: {workflowState.messageDigestB64 ? `${workflowState.messageDigestB64.slice(0, 16)}...` : 'pending'}
+            <br />• Prepared PDF with ByteRange:{" "}
+            {workflowState.byteRange ? `[${workflowState.byteRange.join(", ")}]` : "pending"}
+            <br />• SHA-256 messageDigest:{" "}
+            {workflowState.messageDigestB64
+              ? `${workflowState.messageDigestB64.slice(0, 16)}...`
+              : "pending"}
             <br />• Signer certificate from CPS/PKCS#11 device
           </Text>
 
           <Text component="p" size="sm" mb="md">
             <strong>Output:</strong>
-            <br />• DER-encoded SignedAttributes: {workflowState.signedAttrsDerB64 ? `${workflowState.signedAttrsDerB64.length} chars (base64)` : 'pending generation'}
-            <br />• RSA-PKCS#1 v1.5 signature via <pre style={{display: 'inline', background: '#f8f9fa', padding: '2px 4px', borderRadius: '3px'}}>CKM_SHA256_RSA_PKCS</pre>
+            <br />• DER-encoded SignedAttributes:{" "}
+            {workflowState.signedAttrsDerB64
+              ? `${workflowState.signedAttrsDerB64.length} chars (base64)`
+              : "pending generation"}
+            <br />• RSA-PKCS#1 v1.5 signature via{" "}
+            <pre
+              style={{
+                display: "inline",
+                background: "#f8f9fa",
+                padding: "2px 4px",
+                borderRadius: "3px",
+              }}
+            >
+              CKM_SHA256_RSA_PKCS
+            </pre>
           </Text>
 
           <Text component="p" size="sm" c="orange">
-            <strong>PAdES Compliance:</strong> The <pre style={{display: 'inline', background: '#f8f9fa', padding: '2px 4px', borderRadius: '3px'}}>signing-time</pre> attribute is <em>forbidden</em> in signed attributes per ETSI EN 319 142—trusted timestamps are added as unsigned attributes.
+            <strong>PAdES Compliance:</strong> The{" "}
+            <pre
+              style={{
+                display: "inline",
+                background: "#f8f9fa",
+                padding: "2px 4px",
+                borderRadius: "3px",
+              }}
+            >
+              signing-time
+            </pre>{" "}
+            attribute is <em>forbidden</em> in signed attributes per ETSI EN 319 142—trusted
+            timestamps are added as unsigned attributes.
           </Text>
         </Alert>
 
         <Alert color="green" title="Ready to Sign">
           <Text component="p" size="sm">
-            Your signing method is configured in the header. Click "Continue to Finalize" to proceed with signing using your selected method.
+            Your signing method is configured in the header. Click "Continue to Finalize" to proceed
+            with signing using your selected method.
           </Text>
         </Alert>
 
@@ -213,20 +295,27 @@ export function StepContent() {
         <Text fw={500}>4. Finalizing</Text>
         <Alert color="blue" title="What happens now">
           <Text component="p" size="sm" mb="md">
-            <strong>CMS SignedData Assembly & PDF Integration:</strong> We construct the complete <strong>detached signature</strong> container with all cryptographic proof elements.
+            <strong>CMS SignedData Assembly & PDF Integration:</strong> We construct the complete{" "}
+            <strong>detached signature</strong> container with all cryptographic proof elements.
           </Text>
 
-          <Text component="div" size="sm" mb="md" style={{marginLeft: '16px'}}>
+          <Text component="div" size="sm" mb="md" style={{ marginLeft: "16px" }}>
             <strong>Signature container includes:</strong>
-            <br />• <strong>Signature value:</strong> RSA signature over DER-encoded SignedAttributes
+            <br />• <strong>Signature value:</strong> RSA signature over DER-encoded
+            SignedAttributes
             <br />• <strong>Certificate chain:</strong> Signer's certificate + intermediate CAs
-            <br />• <strong>RFC 3161 Timestamp:</strong> TSA time-stamp token → <em>PAdES B-T compliance</em>
-            <br />• <strong>Validation data (LTV):</strong> CRLs/OCSP responses in DSS → <em>PAdES B-LT/B-LTA</em>
+            <br />• <strong>RFC 3161 Timestamp:</strong> TSA time-stamp token →{" "}
+            <em>PAdES B-T compliance</em>
+            <br />• <strong>Validation data (LTV):</strong> CRLs/OCSP responses in DSS →{" "}
+            <em>PAdES B-LT/B-LTA</em>
           </Text>
 
           <Text component="p" size="sm" mb="sm">
             <strong>Input:</strong>
-            <br />• SignedAttributes DER: {workflowState.signedAttrsDerB64 ? `~${workflowState.signedAttrsDerB64.length} chars` : 'from signing step'}
+            <br />• SignedAttributes DER:{" "}
+            {workflowState.signedAttrsDerB64
+              ? `~${workflowState.signedAttrsDerB64.length} chars`
+              : "from signing step"}
             <br />• RSA signature from CPS/PKCS#11 device
             <br />• Certificate chain and revocation data
           </Text>
@@ -235,11 +324,15 @@ export function StepContent() {
             <strong>Output:</strong>
             <br />• Complete CMS SignedData container (DER-encoded)
             <br />• Signed PDF with embedded cryptographic proof
-            <br />• Preserved ByteRange: {workflowState.byteRange ? `[${workflowState.byteRange.join(', ')}]` : 'from preparation'}
+            <br />• Preserved ByteRange:{" "}
+            {workflowState.byteRange
+              ? `[${workflowState.byteRange.join(", ")}]`
+              : "from preparation"}
           </Text>
 
           <Text component="p" size="sm" c="green">
-            <strong>Result:</strong> PAdES-compliant signed PDF ensuring long-term legal validity ("force probante") for French healthcare e-prescriptions.
+            <strong>Result:</strong> PAdES-compliant signed PDF ensuring long-term legal validity
+            ("force probante") for French healthcare e-prescriptions.
           </Text>
         </Alert>
         <Alert color="green" title="TSA Configuration">
@@ -266,21 +359,30 @@ export function StepContent() {
         <Text fw={500}>5. Verify</Text>
         <Alert color="blue" title="What happens now">
           <Text component="p" size="sm" mb="md">
-            <strong>Multi-Layer Signature Verification:</strong> Comprehensive cryptographic and compliance validation process.
+            <strong>Multi-Layer Signature Verification:</strong> Comprehensive cryptographic and
+            compliance validation process.
           </Text>
 
           <Text component="div" size="sm" mb="md">
             <strong>Verification steps:</strong>
-            <br /><strong>1. Document Integrity:</strong> Recompute SHA-256 over ByteRange → compare with messageDigest
-            <br /><strong>2. Signature Validity:</strong> Verify RSA signature over SignedAttributes DER
-            <br /><strong>3. Certificate Trust:</strong> Validate certificate chain + revocation status
-            <br /><strong>4. Timestamp Verification:</strong> Validate RFC 3161 TSA token (if present)
+            <br />
+            <strong>1. Document Integrity:</strong> Recompute SHA-256 over ByteRange → compare with
+            messageDigest
+            <br />
+            <strong>2. Signature Validity:</strong> Verify RSA signature over SignedAttributes DER
+            <br />
+            <strong>3. Certificate Trust:</strong> Validate certificate chain + revocation status
+            <br />
+            <strong>4. Timestamp Verification:</strong> Validate RFC 3161 TSA token (if present)
           </Text>
 
           <Text component="p" size="sm" mb="sm">
             <strong>Input:</strong>
             <br />• Signed PDF with embedded CMS container
-            <br />• ByteRange data: {workflowState.byteRange ? `[${workflowState.byteRange.join(', ')}]` : 'from signed document'}
+            <br />• ByteRange data:{" "}
+            {workflowState.byteRange
+              ? `[${workflowState.byteRange.join(", ")}]`
+              : "from signed document"}
             <br />• Certificate validation data (CRLs/OCSP)
           </Text>
 
@@ -292,7 +394,9 @@ export function StepContent() {
           </Text>
 
           <Text component="p" size="sm" c="blue">
-            <strong>Healthcare compliance:</strong> Successful verification confirms regulatory standards and provides full legal evidentiary value ("force probante") for pharmacy dispensation.
+            <strong>Healthcare compliance:</strong> Successful verification confirms regulatory
+            standards and provides full legal evidentiary value ("force probante") for pharmacy
+            dispensation.
           </Text>
         </Alert>
 
@@ -316,9 +420,8 @@ export function StepContent() {
   // Default content for other steps
   return (
     <Stack>
-      <Text fw={500}>Processing Step: {workflowState.step}</Text>
       <Text c="dimmed" size="sm">
-        This is an automated step. Click the action button below to proceed.
+        Click the action button below to proceed.
       </Text>
     </Stack>
   );

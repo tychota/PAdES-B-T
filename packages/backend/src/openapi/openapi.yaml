@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: |
     PAdES-B-T compliant ePrescription Proof of Concept with CPS card integration.
-    
+
     This API provides endpoints for:
     - PDF document preparation and signing
     - Certificate-based digital signatures with PAdES-B-T compliance
@@ -12,14 +12,14 @@ info:
     - PKCS#11 hardware token integration
     - PDF signature verification
     - Debug and diagnostic tools
-    
+
     ## Signing Workflow
-    
+
     The signing process follows a 3-step pattern:
     1. **Prepare** (`POST /api/pdf/prepare`) - Process PDF and generate message digest
     2. **Presign** (`POST /api/pdf/presign`) - Build signed attributes for external signing
     3. **Finalize** (`POST /api/pdf/finalize`) - Embed signature and create final signed PDF
-    
+
   contact:
     name: PAdES POC Team
   license:
@@ -39,13 +39,13 @@ paths:
       description: Returns the current status and configuration of the service
       operationId: getHealth
       responses:
-        '200':
+        "200":
           description: Service is healthy
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/BaseApiResponse'
+                  - $ref: "#/components/schemas/BaseApiResponse"
                   - type: object
                     properties:
                       status:
@@ -55,13 +55,13 @@ paths:
                       timestamp:
                         type: string
                         format: date-time
-                        example: '2024-01-15T10:30:45.123Z'
+                        example: "2024-01-15T10:30:45.123Z"
                       service:
                         type: string
-                        example: 'PAdES-B-T Signature Service'
+                        example: "PAdES-B-T Signature Service"
                       version:
                         type: string
-                        example: '1.0.0'
+                        example: "1.0.0"
 
   /pdf/generate:
     post:
@@ -78,32 +78,32 @@ paths:
               type: object
               properties:
                 config:
-                  $ref: '#/components/schemas/PDFSigningConfig'
+                  $ref: "#/components/schemas/PDFSigningConfig"
               example:
                 config:
                   signerName: "Dr. Jean Dupont"
                   location: "Paris, France"
                   reason: "ePrescription signature"
       responses:
-        '200':
+        "200":
           description: PDF generated successfully
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/BaseApiResponse'
+                  - $ref: "#/components/schemas/BaseApiResponse"
                   - type: object
                     properties:
                       pdfBase64:
                         type: string
                         format: byte
                         description: Base64-encoded PDF document
-        '500':
+        "500":
           description: PDF generation failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
+                $ref: "#/components/schemas/ApiError"
 
   /pdf/prepare:
     post:
@@ -130,15 +130,15 @@ paths:
                   format: byte
                   description: Base64-encoded PDF document to be signed
                 config:
-                  $ref: '#/components/schemas/PDFSigningConfig'
+                  $ref: "#/components/schemas/PDFSigningConfig"
       responses:
-        '200':
+        "200":
           description: PDF prepared successfully
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/BaseApiResponse'
+                  - $ref: "#/components/schemas/BaseApiResponse"
                   - type: object
                     required:
                       - preparedPdfBase64
@@ -150,17 +150,17 @@ paths:
                         format: byte
                         description: PDF with signature placeholder
                       byteRange:
-                        $ref: '#/components/schemas/ByteRange'
+                        $ref: "#/components/schemas/ByteRange"
                       messageDigestB64:
                         type: string
                         format: byte
                         description: Base64-encoded message digest to be signed
-        '500':
+        "500":
           description: PDF preparation failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
+                $ref: "#/components/schemas/ApiError"
 
   /pdf/presign:
     post:
@@ -197,13 +197,13 @@ paths:
                   format: date-time
                   description: Optional signing time (defaults to current time)
       responses:
-        '200':
+        "200":
           description: Signed attributes built successfully
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/BaseApiResponse'
+                  - $ref: "#/components/schemas/BaseApiResponse"
                   - type: object
                     required:
                       - toBeSignedB64
@@ -217,18 +217,18 @@ paths:
                         type: string
                         format: byte
                         description: DER-encoded signed attributes structure
-        '400':
+        "400":
           description: Missing required parameters
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
-        '500':
+                $ref: "#/components/schemas/ApiError"
+        "500":
           description: Presigning failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
+                $ref: "#/components/schemas/ApiError"
 
   /pdf/finalize:
     post:
@@ -258,7 +258,7 @@ paths:
                   format: byte
                   description: Prepared PDF from step 1
                 byteRange:
-                  $ref: '#/components/schemas/ByteRange'
+                  $ref: "#/components/schemas/ByteRange"
                 signedAttrsDerB64:
                   type: string
                   format: byte
@@ -284,13 +284,13 @@ paths:
                   description: Whether to request RFC 3161 timestamp (PAdES-B-T), defaults to true
                   default: true
       responses:
-        '200':
+        "200":
           description: PDF finalized successfully
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/BaseApiResponse'
+                  - $ref: "#/components/schemas/BaseApiResponse"
                   - type: object
                     required:
                       - signedPdfBase64
@@ -299,18 +299,18 @@ paths:
                         type: string
                         format: byte
                         description: Final signed PDF document
-        '400':
+        "400":
           description: Missing required parameters
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
-        '500':
+                $ref: "#/components/schemas/ApiError"
+        "500":
           description: Finalization failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
+                $ref: "#/components/schemas/ApiError"
 
   /pdf/verify:
     post:
@@ -335,25 +335,25 @@ paths:
                   format: byte
                   description: Base64-encoded signed PDF to verify
       responses:
-        '200':
+        "200":
           description: Verification completed
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/BaseApiResponse'
+                  - $ref: "#/components/schemas/BaseApiResponse"
                   - type: object
                     required:
                       - result
                     properties:
                       result:
-                        $ref: '#/components/schemas/VerificationResult'
-        '500':
+                        $ref: "#/components/schemas/VerificationResult"
+        "500":
           description: Verification failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
+                $ref: "#/components/schemas/ApiError"
 
   /icanopee/dc-parameter:
     get:
@@ -363,13 +363,13 @@ paths:
       description: Returns the DC parameter needed for frontend Icanopee CPS card integration
       operationId: getDcParameter
       responses:
-        '200':
+        "200":
           description: DC parameter retrieved successfully
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/BaseApiResponse'
+                  - $ref: "#/components/schemas/BaseApiResponse"
                   - type: object
                     required:
                       - dcParameter
@@ -377,12 +377,12 @@ paths:
                       dcParameter:
                         type: string
                         description: DC parameter for Icanopee integration
-        '500':
+        "500":
           description: DC parameter not configured or error occurred
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
+                $ref: "#/components/schemas/ApiError"
 
   /mock/cert:
     get:
@@ -392,13 +392,13 @@ paths:
       description: Returns the certificate from the mock HSM for testing purposes
       operationId: getMockCert
       responses:
-        '200':
+        "200":
           description: Mock certificate retrieved successfully
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/BaseApiResponse'
+                  - $ref: "#/components/schemas/BaseApiResponse"
                   - type: object
                     required:
                       - signerCertPem
@@ -409,12 +409,12 @@ paths:
                       certificateChainPem:
                         type: string
                         description: PEM-encoded certificate chain
-        '500':
+        "500":
           description: Mock HSM not initialized or error occurred
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
+                $ref: "#/components/schemas/ApiError"
 
   /mock/sign:
     post:
@@ -437,13 +437,13 @@ paths:
                   format: byte
                   description: Base64-encoded data to be signed
       responses:
-        '200':
+        "200":
           description: Data signed successfully
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/BaseApiResponse'
+                  - $ref: "#/components/schemas/BaseApiResponse"
                   - type: object
                     required:
                       - signatureB64
@@ -464,18 +464,18 @@ paths:
                         type: string
                         description: Signature algorithm OID
                         example: "1.2.840.113549.1.1.11"
-        '400':
+        "400":
           description: Invalid request
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
-        '500':
+                $ref: "#/components/schemas/ApiError"
+        "500":
           description: Signing failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
+                $ref: "#/components/schemas/ApiError"
 
   /debug/pdf-objects:
     post:
@@ -509,13 +509,13 @@ paths:
                   description: Collapse large stream objects
                   default: true
       responses:
-        '200':
+        "200":
           description: PDF objects extracted successfully
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/BaseApiResponse'
+                  - $ref: "#/components/schemas/BaseApiResponse"
                   - type: object
                     required:
                       - objectsText
@@ -528,12 +528,12 @@ paths:
                         items:
                           type: integer
                         description: Object numbers containing signature dictionaries
-        '400':
+        "400":
           description: PDF analysis failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
+                $ref: "#/components/schemas/ApiError"
 
   /debug/cms:
     post:
@@ -561,13 +561,13 @@ paths:
                   format: byte
                   description: Base64-encoded CMS DER data (alternative to pdfBase64)
       responses:
-        '200':
+        "200":
           description: CMS parsed successfully
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/BaseApiResponse'
+                  - $ref: "#/components/schemas/BaseApiResponse"
                   - type: object
                     required:
                       - summary
@@ -596,12 +596,12 @@ paths:
                       asn1:
                         type: object
                         description: Parsed ASN.1 structure
-        '400':
+        "400":
           description: CMS parsing failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
+                $ref: "#/components/schemas/ApiError"
 
   /pkcs11/slots:
     get:
@@ -611,13 +611,13 @@ paths:
       description: Returns available PKCS#11 slots for hardware token access
       operationId: getPkcs11Slots
       responses:
-        '200':
+        "200":
           description: Slots retrieved successfully
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/BaseApiResponse'
+                  - $ref: "#/components/schemas/BaseApiResponse"
                   - type: object
                     required:
                       - slots
@@ -625,13 +625,13 @@ paths:
                       slots:
                         type: array
                         items:
-                          $ref: '#/components/schemas/PKCS11Slot'
-        '500':
+                          $ref: "#/components/schemas/PKCS11Slot"
+        "500":
           description: PKCS#11 operation failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
+                $ref: "#/components/schemas/ApiError"
 
   /pkcs11/certificates:
     post:
@@ -656,13 +656,13 @@ paths:
                   type: string
                   description: PIN for slot access (if required)
       responses:
-        '200':
+        "200":
           description: Certificates retrieved successfully
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/BaseApiResponse'
+                  - $ref: "#/components/schemas/BaseApiResponse"
                   - type: object
                     required:
                       - certificates
@@ -670,13 +670,13 @@ paths:
                       certificates:
                         type: array
                         items:
-                          $ref: '#/components/schemas/PKCS11Certificate'
-        '500':
+                          $ref: "#/components/schemas/PKCS11Certificate"
+        "500":
           description: PKCS#11 operation failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
+                $ref: "#/components/schemas/ApiError"
 
   /pkcs11/sign:
     post:
@@ -715,13 +715,13 @@ paths:
                       type: string
                   description: Filter to select specific certificate
       responses:
-        '200':
+        "200":
           description: Data signed successfully
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/BaseApiResponse'
+                  - $ref: "#/components/schemas/BaseApiResponse"
                   - type: object
                     required:
                       - signatureB64
@@ -740,19 +740,19 @@ paths:
                         type: string
                         description: Signature algorithm OID
                       certificate:
-                        $ref: '#/components/schemas/PKCS11Certificate'
-        '400':
+                        $ref: "#/components/schemas/PKCS11Certificate"
+        "400":
           description: Invalid request
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
-        '500':
+                $ref: "#/components/schemas/ApiError"
+        "500":
           description: PKCS#11 signing failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiError'
+                $ref: "#/components/schemas/ApiError"
 
 components:
   schemas:
@@ -767,12 +767,12 @@ components:
         logs:
           type: array
           items:
-            $ref: '#/components/schemas/LogEntry'
+            $ref: "#/components/schemas/LogEntry"
           description: Operation logs for debugging
 
     ApiError:
       allOf:
-        - $ref: '#/components/schemas/BaseApiResponse'
+        - $ref: "#/components/schemas/BaseApiResponse"
         - type: object
           required:
             - error

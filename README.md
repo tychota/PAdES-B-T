@@ -180,6 +180,7 @@ pnpm test
 ~~The Icanopee sign API has a poorly designed encoding handling that causes issues with document signing. This affects the CPS card integration and can result in corrupted signatures.~~
 
 **✅ FIXED**: Updated integration to use the new `s_dataToSignInBase64` API that properly handles binary data encoding. The application now:
+
 - Uses `s_dataToSignInBase64` instead of `s_stringToSign` for proper binary data handling
 - Implements digest validation to ensure data integrity between server and CPS device
 - Supports both signature and auth certificates returned by the API

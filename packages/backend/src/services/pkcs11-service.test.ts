@@ -82,9 +82,9 @@ describe("PKCS11Service", () => {
   describe("initialize", () => {
     it("should initialize PKCS#11 library successfully", async () => {
       const logs: LogEntry[] = [];
-      
+
       await service.initialize(logs);
-      
+
       expect(logs).toHaveLength(3); // info, success, debug logs
       expect(logs[0].level).toBe("info");
       expect(logs[0].message).toContain("Initializing PKCS#11 library");
@@ -94,25 +94,25 @@ describe("PKCS11Service", () => {
 
     it("should not reinitialize if already initialized", async () => {
       const logs: LogEntry[] = [];
-      
+
       // First initialization
       await service.initialize(logs);
       const initialLogCount = logs.length;
-      
+
       // Second initialization (should be skipped)
       await service.initialize(logs);
-      
+
       expect(logs).toHaveLength(initialLogCount); // No new logs
     });
 
     it("should throw error if library file not found", async () => {
       const fs = await import("fs");
       vi.mocked(fs.promises.access).mockRejectedValueOnce(new Error("File not found"));
-      
+
       const logs: LogEntry[] = [];
-      
+
       await expect(service.initialize(logs)).rejects.toThrow("PKCS#11 library not found");
-      expect(logs.some(log => log.level === "error")).toBe(true);
+      expect(logs.some((log) => log.level === "error")).toBe(true);
     });
   });
 
@@ -120,9 +120,9 @@ describe("PKCS11Service", () => {
     it("should return available slots with token information", async () => {
       const logs: LogEntry[] = [];
       await service.initialize(logs);
-      
+
       const slots = service.getSlots(logs);
-      
+
       expect(slots).toHaveLength(2);
       expect(slots[0]).toEqual({
         slotId: 0,
@@ -137,7 +137,7 @@ describe("PKCS11Service", () => {
           serialNumber: "123456",
         },
       });
-      
+
       expect(slots[1]).toEqual({
         slotId: 1,
         description: "Mock Slot 1",
@@ -150,7 +150,7 @@ describe("PKCS11Service", () => {
 
     it("should throw error if not initialized", () => {
       const logs: LogEntry[] = [];
-      
+
       expect(() => service.getSlots(logs)).toThrow("PKCS#11 not initialized");
     });
   });
@@ -158,11 +158,11 @@ describe("PKCS11Service", () => {
   describe("logging", () => {
     it("should log messages when logs array provided", async () => {
       const logs: LogEntry[] = [];
-      
+
       await service.initialize(logs);
-      
+
       expect(logs.length).toBeGreaterThan(0);
-      logs.forEach(log => {
+      logs.forEach((log) => {
         expect(log).toHaveProperty("timestamp");
         expect(log).toHaveProperty("level");
         expect(log).toHaveProperty("source", "pkcs11");
@@ -181,13 +181,14 @@ describe("PKCS11Service", () => {
     it("should cleanup resources without errors", async () => {
       const logs: LogEntry[] = [];
       await service.initialize(logs);
-      
+
       expect(() => service.cleanup(logs)).not.toThrow();
-      
+
       // Should log cleanup messages
-      const cleanupLogs = logs.filter(log => 
-        log.message.includes("PKCS#11 session closed") ||
-        log.message.includes("PKCS#11 library finalized")
+      const cleanupLogs = logs.filter(
+        (log) =>
+          log.message.includes("PKCS#11 session closed") ||
+          log.message.includes("PKCS#11 library finalized"),
       );
       expect(cleanupLogs.length).toBeGreaterThan(0);
     });
@@ -196,7 +197,9 @@ describe("PKCS11Service", () => {
   describe("error handling", () => {
     it("should handle library initialization errors gracefully", async () => {
       const mockPkcs11 = {
-        load: vi.fn(() => { throw new Error("Mock library error"); }),
+        load: vi.fn(() => {
+          throw new Error("Mock library error");
+        }),
         C_Initialize: vi.fn(),
       };
 
@@ -204,10 +207,10 @@ describe("PKCS11Service", () => {
       vi.mocked(pkcs11js.PKCS11).mockImplementationOnce(() => mockPkcs11);
 
       const logs: LogEntry[] = [];
-      
+
       await expect(service.initialize(logs)).rejects.toThrow("PKCS#11 initialization failed");
-      
-      const errorLogs = logs.filter(log => log.level === "error");
+
+      const errorLogs = logs.filter((log) => log.level === "error");
       expect(errorLogs.length).toBeGreaterThan(0);
       expect(errorLogs[0].message).toContain("PKCS#11 initialization failed");
     });
