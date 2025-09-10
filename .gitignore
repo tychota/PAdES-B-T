@@ -64,9 +64,12 @@ scripts/out.getcpx.json
 scripts/out.isregistered.json
 scripts/out.open.json
 scripts/out.readers.json
+scripts/out.register.json
 scripts/out.sign.json
+scripts/out.sign_new_api.json
 scripts/cert.pem
 scripts/dcparams.b64
 scripts/digest.local.b64
 scripts/pubkey.pem
 scripts/sig.bin
+scripts/sig_new.bin

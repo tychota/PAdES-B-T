@@ -25,8 +25,8 @@ export interface WorkflowState {
   preparedPdfBase64?: string;
   byteRange?: [number, number, number, number];
   messageDigestB64?: string;
-  toBeSignedB64?: string;
   signedAttrsDerB64?: string;
+  expectedDigestB64?: string; // For CPS digest validation
   signatureB64?: string;
   signerCertPem?: string;
   certificateChainPem?: string[];
@@ -367,7 +367,7 @@ export const useWorkflowActions = () => {
 
           if (signingMethod === "mock") {
             // Mock HSM signs the DER directly (unchanged)
-            sigRes = await apiClient.mockSign(state.toBeSignedB64!);
+            sigRes = await apiClient.mockSign(state.signedAttrsDerB64!);
           } else if (signingMethod === "cps") {
             // CPS path: let the HSM hash + sign the SignedAttributes DER
             if (!selectedReader) throw new Error("No CPS reader selected.");
@@ -381,13 +381,44 @@ export const useWorkflowActions = () => {
             // IMPORTANT: pass the SignedAttributes DER to the HSM and set preHashed = false
             // so the device computes SHA-256(SignedAttributesDER) internally and signs it.
             const signedAttrsDerB64 = state.signedAttrsDerB64!;
-            const { signature } = await icanopee.signWithCard(
+            const signingResult = await icanopee.signWithCard(
               selectedReader,
               pin,
-              signedAttrsDerB64, // s_stringToSign: DER(SET OF Attribute), base64
+              signedAttrsDerB64, // s_dataToSignInBase64: DER(SET OF Attribute), base64
               logCallback,
             );
-            sigRes = { signatureB64: signature };
+
+            // Validate CPS digest matches server-expected digest
+            if (state.expectedDigestB64 && signingResult.digest) {
+              const expectedDigest = state.expectedDigestB64.replace(/[=\s]/g, ""); // Normalize base64
+              const cpsDigest = signingResult.digest.replace(/[=\s]/g, ""); // Normalize base64
+              
+              if (expectedDigest !== cpsDigest) {
+                addLogs([{
+                  timestamp: new Date().toISOString(),
+                  level: "error",
+                  source: "cps",
+                  message: `Digest mismatch! Expected: ${state.expectedDigestB64}, CPS returned: ${signingResult.digest}`
+                }]);
+                throw new Error(`CPS digest validation failed. Expected digest doesn't match CPS-computed digest. This could indicate data corruption or tampering.`);
+              } else {
+                addLogs([{
+                  timestamp: new Date().toISOString(),
+                  level: "success",
+                  source: "cps",
+                  message: "CPS digest validation passed - digests match"
+                }]);
+              }
+            } else if (state.expectedDigestB64) {
+              addLogs([{
+                timestamp: new Date().toISOString(),
+                level: "warning",
+                source: "cps",
+                message: "No digest returned by CPS - skipping validation"
+              }]);
+            }
+
+            sigRes = { signatureB64: signingResult.signature };
           } else if (signingMethod === "pkcs11") {
             // PKCS#11 path: proper binary signing with native PKCS#11
             if (selectedSlot === null) throw new Error("No PKCS#11 slot selected.");

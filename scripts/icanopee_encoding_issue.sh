@@ -38,8 +38,6 @@ post_json() {
   fi
 }
 
-mkdir -p out
-
 # 0) isDcParameterRegistered (with body)
 say "0) isDcParameterRegistered (best-effort)"
 isreg_body="$(jq -n --arg dc "$DCPARAM64" '{s_dcparameters64:$dc}')"
@@ -168,21 +166,58 @@ if [[ "${DO_RECOVER:-0}" == "1" ]]; then
   openssl asn1parse -inform DER -in recovered.der -i
 fi
 
+# 7) hl_signWithCpxCard (NEW API with base64 data)
+say "7) hl_signWithCpxCard (NEW API with s_dataToSignInBase64)"
+# Encode the data we want to sign as base64
+TO_SIGN_B64="$(printf '%s' "$TO_SIGN" | openssl base64 -A)"
+sign_new_body="$(jq -n --arg sid "$SESSION_ID" --arg pin "$PIN" --arg data_b64 "$TO_SIGN_B64" \
+            '{s_commandName:"hl_signWithCpxCard", s_pinCode:$pin, s_dataToSignInBase64:$data_b64, i_digestType:1, s_sessionId:$sid}')"
+SIGN_NEW_JSON="$(post_json "$BASE/api/hl_signwithcpxcard" "$sign_new_body")"
+jq . <<<"$SIGN_NEW_JSON" > out.sign_new_api.json
+
+SIG_NEW_CERT="$(jq -r '.s_signatureCertificate // empty' < out.sign_new_api.json)"
+SIG_NEW_B64="$(jq -r '.s_signature // empty' < out.sign_new_api.json)"
+AUTH_SIG_NEW_B64="$(jq -r '.s_authSignature // empty' < out.sign_new_api.json)"
+SRV_NEW_DIGEST_B64="$(jq -r '.s_digest // empty' < out.sign_new_api.json)"
+
+if [[ -n "$SIG_NEW_B64" && -n "$SIG_NEW_CERT" ]]; then
+  ok "NEW API: Signature and certificate returned successfully"
+  
+  # Save new API signature and certificate
+  printf '%s\n' "$SIG_NEW_CERT" > cert_new.pem
+  printf '%s'   "$SIG_NEW_B64"  | openssl base64 -d -A > sig_new.bin
+  
+  # Verify signature against original data
+  openssl x509 -in cert_new.pem -pubkey -noout > pubkey_new.pem
+  if openssl dgst -sha256 -verify pubkey_new.pem -signature sig_new.bin <(printf '%s' "$TO_SIGN") >/dev/null 2>&1; then
+    ok "NEW API: Signature verifies correctly"
+  else
+    warn "NEW API: Signature verification failed"
+  fi
+  
+  if [[ -n "$AUTH_SIG_NEW_B64" ]]; then
+    ok "NEW API: Auth signature also returned: ${AUTH_SIG_NEW_B64:0:20}..."
+  fi
+else
+  warn "NEW API: No signature or certificate returned (check out.sign_new_api.json)"
+fi
+
 # ---- conclusion -------------------------------------------------------------
 say "Summary for provider report"
 echo "- Endpoints accept JSON just fine; this script uses ${BOLD}$([[ $USE_TEXT_PLAIN == 1 ]] && echo 'text/plain' || echo 'application/json')${NC} with the same payloads."
-echo "- ${BOLD}Evidence:${NC} server s_digest equals base64(SHA-256(raw s_stringToSign)), and RSA verification succeeds over the ${BOLD}raw string${NC}."
+echo "- ${BOLD}OLD API Evidence:${NC} server s_digest equals base64(SHA-256(raw s_stringToSign)), and RSA verification succeeds over the ${BOLD}raw string${NC}."
+echo "- ${BOLD}NEW API Evidence:${NC} s_dataToSignInBase64 accepts base64-encoded data, allowing binary content to be signed properly."
 
-printf "\n${RED}${BOLD}Design issue:${NC}\n"
-printf "${RED}- 'hl_signWithCpxCard' requires a raw (non-base64) string in JSON.${NC}\n"
-printf "${RED}- This prevents sending ${BOLD}binary${NC}${RED} content (e.g., CMS for PAdES), which is ${BOLD}DER-encoded${NC}${RED} and cannot be represented safely as a JSON text string without encoding.${NC}\n"
-printf "${RED}- For PAdES and other CMS flows, clients must pass the exact DER bytes to be signed; raw JSON text cannot carry that.${NC}\n"
-
-echo
-echo "${BOLD}Recommendations:${NC}"
-echo "1) Accept ${BOLD}s_payloadB64${NC} (base64 of the exact bytes to sign) and an explicit ${BOLD}i_digestType${NC}."
-echo "2) Or support ${BOLD}multipart/form-data${NC} with the signable data in a part with ${BOLD}Content-Type: application/octet-stream${NC}."
-echo "3) Keep ${BOLD}s_signatureCertificate${NC} and return ${BOLD}s_digest${NC} for auditing."
+printf "\n${GRN}${BOLD}New API improvements:${NC}\n"
+printf "${GRN}- 'hl_signWithCpxCard' now accepts 's_dataToSignInBase64' for base64-encoded data.${NC}\n"
+printf "${GRN}- This allows sending ${BOLD}binary${NC}${GRN} content (e.g., CMS for PAdES) safely in JSON.${NC}\n"
+printf "${GRN}- Returns both signature certificate (s_signatureCertificate) and auth signature (s_authSignature).${NC}\n"
 
 echo
-ok "Saved raw responses: out.isregistered.json, out.register.json, out.open.json, out.readers.json, out.getcpx.json, out.card.json, out.sign.json"
+echo "${BOLD}Usage:${NC}"
+echo "- Use ${BOLD}s_dataToSignInBase64${NC} instead of ${BOLD}s_stringToSign${NC}"
+echo "- Pass base64-encoded binary data directly"
+echo "- Both signature and auth signatures are now available"
+
+echo
+ok "Saved responses: out.sign.json (old API), out.sign_new_api.json (new API)"

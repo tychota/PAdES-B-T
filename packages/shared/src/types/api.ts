@@ -34,8 +34,8 @@ export interface PresignRequest {
 }
 
 export interface PresignResponse extends BaseApiResponse {
-  toBeSignedB64: string; // Hash to sign with private key
-  signedAttrsDerB64: string; // DER-encoded signed attributes
+  signedAttrsDerB64: string; // DER-encoded signed attributes (what needs to be signed)
+  expectedDigestB64: string; // SHA-256 hash of signedAttrsDer for CPS validation
 }
 
 // Step 3: Finalize (assemble CMS and embed in PDF)
