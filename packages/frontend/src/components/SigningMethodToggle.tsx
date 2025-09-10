@@ -27,7 +27,6 @@ import {
 
 import type { PKCS11CertificateInfo, PKCS11SlotInfo } from "@pades-poc/shared";
 
-
 export function SigningMethodToggle() {
   const [signingMethod, setSigningMethod] = useAtom(signingMethodAtom);
   const [pin, setPin] = useAtom(pinAtom);
@@ -46,14 +45,17 @@ export function SigningMethodToggle() {
 
   const [opened, setOpened] = useState(false);
 
-  // Auto-load data when method changes
+  // Auto-load data when method changes - STRICT SEPARATION
   useEffect(() => {
+    // Only load CPS readers when CPS method is selected
     if (signingMethod === "cps" && readers.length === 0 && status === "idle") {
       void getReaders();
-    } else if (signingMethod === "pkcs11" && slots.length === 0 && pkcs11Status === "idle") {
-      void getSlots();
     }
-  }, [signingMethod, readers.length, slots.length, getReaders, getSlots, status, pkcs11Status]);
+  }, [signingMethod, readers.length, getReaders, status]);
+
+  // REMOVED: Auto-load PKCS#11 slots on method change
+  // This was causing unwanted PKCS#11 calls even when using CPS
+  // PKCS#11 slots will now only be loaded when user opens the PKCS#11 controls
 
   // Auto-select single reader
   useEffect(() => {
@@ -71,7 +73,13 @@ export function SigningMethodToggle() {
 
   // Auto-load certificates when slot and pin are available
   useEffect(() => {
-    if (signingMethod === "pkcs11" && selectedSlot !== null && pin.length >= 4 && certificates.length === 0 && pkcs11Status === "idle") {
+    if (
+      signingMethod === "pkcs11" &&
+      selectedSlot !== null &&
+      pin.length >= 4 &&
+      certificates.length === 0 &&
+      pkcs11Status === "idle"
+    ) {
       void getCertificates(selectedSlot, pin);
     }
   }, [signingMethod, selectedSlot, pin, certificates.length, getCertificates, pkcs11Status]);
@@ -157,7 +165,13 @@ export function SigningMethodToggle() {
               size="xs"
               variant="light"
               rightSection={<IconChevronDown size={14} />}
-              onClick={() => setOpened((o) => !o)}
+              onClick={() => {
+                setOpened((o) => !o);
+                // Load PKCS#11 slots when user opens the controls for the first time
+                if (!opened && slots.length === 0 && pkcs11Status === "idle") {
+                  void getSlots();
+                }
+              }}
             >
               PKCS#11 Controls
             </Button>
@@ -185,7 +199,10 @@ export function SigningMethodToggle() {
                 label="Slot"
                 placeholder={pkcs11Status === "loading" ? "Loading..." : "Choose a slot"}
                 data={slots
-                  .filter((slotItem: PKCS11SlotInfo) => slotItem.slotId !== null && slotItem.slotId !== undefined)
+                  .filter(
+                    (slotItem: PKCS11SlotInfo) =>
+                      slotItem.slotId !== null && slotItem.slotId !== undefined,
+                  )
                   .map((slotItem: PKCS11SlotInfo) => ({
                     value: slotItem.slotId.toString(),
                     label: `${slotItem.slotId}: ${slotItem.description}${slotItem.tokenInfo ? ` (${slotItem.tokenInfo.label})` : ""}`,
@@ -203,14 +220,22 @@ export function SigningMethodToggle() {
                 <Select
                   size="xs"
                   label="Certificate"
-                  placeholder={pkcs11Status === "loading" ? "Loading..." : certificates.length === 0 && pin.length >= 4 ? "No certificates found" : "Enter PIN to load certificates"}
+                  placeholder={
+                    pkcs11Status === "loading"
+                      ? "Loading..."
+                      : certificates.length === 0 && pin.length >= 4
+                        ? "No certificates found"
+                        : "Enter PIN to load certificates"
+                  }
                   data={certificates.map((certItem: PKCS11CertificateInfo) => ({
                     value: certItem.label,
                     label: `${certItem.label} (${certItem.subject.split(",")[0] || "Unknown"})`,
                   }))}
                   value={selectedCertificate}
                   onChange={setSelectedCertificate}
-                  disabled={pkcs11Status === "loading" || (certificates.length === 0 && pin.length < 4)}
+                  disabled={
+                    pkcs11Status === "loading" || (certificates.length === 0 && pin.length < 4)
+                  }
                 />
               )}
             </Stack>

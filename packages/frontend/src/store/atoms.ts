@@ -43,7 +43,10 @@ export const pdfFileAtom = atom<File | null>(null);
 export const loadingAtom = atom<boolean>(false);
 export const logsAtom = atom<LogEntry[]>([]);
 // Persistent atoms with localStorage using jotai/utils
-export const signingMethodAtom = atomWithStorage<"mock" | "cps" | "pkcs11">("signingMethod", "pkcs11");
+export const signingMethodAtom = atomWithStorage<"mock" | "cps" | "pkcs11">(
+  "signingMethod",
+  "mock",
+);
 export const pinAtom = atomWithStorage<string>("pin", "");
 export const availableReadersAtom = atom<PcscReader[]>([]);
 export const selectedReaderAtom = atomWithStorage<string | null>("selectedReader", null);
@@ -96,16 +99,25 @@ export const canProceedAtom = atom<boolean>((get) => {
       // allow continue to run the prepare API when we have a PDF to prepare
       return !!state.pdfBase64;
     case "sign":
-      if (signingMethod === "mock") return !!state.messageDigestB64;
-      if (signingMethod === "cps")
+      // STRICT SEPARATION: Only validate requirements for the selected signing method
+      if (signingMethod === "mock") {
+        return !!state.messageDigestB64;
+      }
+      if (signingMethod === "cps") {
+        // CPS workflow: Only require messageDigest, PIN, and selected reader
+        // Do NOT check PKCS#11 state (selectedSlot, selectedCertificate)
         return !!state.messageDigestB64 && pin.length >= 4 && !!selectedReader;
-      if (signingMethod === "pkcs11")
+      }
+      if (signingMethod === "pkcs11") {
+        // PKCS#11 workflow: Only require messageDigest, PIN, slot, and certificate
+        // Do NOT check CPS state (selectedReader)
         return (
           !!state.messageDigestB64 &&
           pin.length >= 4 &&
           selectedSlot !== null &&
           !!selectedCertificate
         );
+      }
       return false;
     case "finalize":
       // do NOT require signature yet—it's created when you click Continue
@@ -314,12 +326,15 @@ export const useWorkflowActions = () => {
 
         case "sign": {
           let certRes: { signerCertPem?: string; certificateChainPem?: string[] } = {};
+
+          // STRICT WORKFLOW SEPARATION: Each signing method uses completely different code paths
           if (signingMethod === "mock") {
+            // Mock HSM workflow - get certificate from mock service
             certRes = await apiClient.getMockCert();
           } else if (signingMethod === "cps") {
+            // CPS workflow - ONLY use Icanopee, NO PKCS#11 calls
             if (!selectedReader) throw new Error("No CPS reader selected.");
 
-            // Fixed: Connect to card first, then read it (following the working flow sequence)
             const logCallback = (level: LogEntry["level"], message: string) =>
               addLogs([{ timestamp: new Date().toISOString(), level, source: "cps", message }]);
 
@@ -329,7 +344,10 @@ export const useWorkflowActions = () => {
             // Step 2: Read card info and certificate (calls hl_readcpxcard)
             const card = await icanopee.readCard(selectedReader, pin, logCallback);
             certRes = { signerCertPem: card.certificate, certificateChainPem: [] };
+
+            // IMPORTANT: CPS workflow ends here - no PKCS#11 operations
           } else if (signingMethod === "pkcs11") {
+            // PKCS#11 workflow - ONLY use PKCS#11, NO Icanopee calls
             if (selectedSlot === null) throw new Error("No PKCS#11 slot selected.");
             if (!selectedCertificate) throw new Error("No certificate selected.");
 
@@ -348,11 +366,15 @@ export const useWorkflowActions = () => {
               throw new Error(`Selected certificate not found: ${selectedCertificate}`);
 
             certRes = { signerCertPem: selectedCert.certificatePem, certificateChainPem: [] };
+
+            // IMPORTANT: PKCS#11 workflow ends here - no Icanopee operations
           } else {
             throw new Error(`Unknown signing method: ${signingMethod as string}`);
           }
 
           if (!certRes.signerCertPem) throw new Error("Could not retrieve signer certificate.");
+
+          // Common presign step for all methods
           const presignRes = await apiClient.presignPDF({
             messageDigestB64: state.messageDigestB64!,
             signerCertPem: certRes.signerCertPem,
@@ -365,11 +387,12 @@ export const useWorkflowActions = () => {
         case "finalize": {
           let sigRes = { signatureB64: "" };
 
+          // STRICT WORKFLOW SEPARATION: Each signing method uses completely different signing paths
           if (signingMethod === "mock") {
-            // Mock HSM signs the DER directly (unchanged)
+            // Mock HSM workflow - sign with mock service
             sigRes = await apiClient.mockSign(state.signedAttrsDerB64!);
           } else if (signingMethod === "cps") {
-            // CPS path: let the HSM hash + sign the SignedAttributes DER
+            // CPS workflow - ONLY use Icanopee, NO PKCS#11 calls
             if (!selectedReader) throw new Error("No CPS reader selected.");
 
             const logCallback = (level: LogEntry["level"], message: string) =>
@@ -392,35 +415,45 @@ export const useWorkflowActions = () => {
             if (state.expectedDigestB64 && signingResult.digest) {
               const expectedDigest = state.expectedDigestB64.replace(/[=\s]/g, ""); // Normalize base64
               const cpsDigest = signingResult.digest.replace(/[=\s]/g, ""); // Normalize base64
-              
+
               if (expectedDigest !== cpsDigest) {
-                addLogs([{
-                  timestamp: new Date().toISOString(),
-                  level: "error",
-                  source: "cps",
-                  message: `Digest mismatch! Expected: ${state.expectedDigestB64}, CPS returned: ${signingResult.digest}`
-                }]);
-                throw new Error(`CPS digest validation failed. Expected digest doesn't match CPS-computed digest. This could indicate data corruption or tampering.`);
+                addLogs([
+                  {
+                    timestamp: new Date().toISOString(),
+                    level: "error",
+                    source: "cps",
+                    message: `Digest mismatch! Expected: ${state.expectedDigestB64}, CPS returned: ${signingResult.digest}`,
+                  },
+                ]);
+                throw new Error(
+                  `CPS digest validation failed. Expected digest doesn't match CPS-computed digest. This could indicate data corruption or tampering.`,
+                );
               } else {
-                addLogs([{
-                  timestamp: new Date().toISOString(),
-                  level: "success",
-                  source: "cps",
-                  message: "CPS digest validation passed - digests match"
-                }]);
+                addLogs([
+                  {
+                    timestamp: new Date().toISOString(),
+                    level: "success",
+                    source: "cps",
+                    message: "CPS digest validation passed - digests match",
+                  },
+                ]);
               }
             } else if (state.expectedDigestB64) {
-              addLogs([{
-                timestamp: new Date().toISOString(),
-                level: "warning",
-                source: "cps",
-                message: "No digest returned by CPS - skipping validation"
-              }]);
+              addLogs([
+                {
+                  timestamp: new Date().toISOString(),
+                  level: "warning",
+                  source: "cps",
+                  message: "No digest returned by CPS - skipping validation",
+                },
+              ]);
             }
 
             sigRes = { signatureB64: signingResult.signature };
+
+            // IMPORTANT: CPS workflow ends here - no PKCS#11 operations
           } else if (signingMethod === "pkcs11") {
-            // PKCS#11 path: proper binary signing with native PKCS#11
+            // PKCS#11 workflow - ONLY use PKCS#11, NO Icanopee calls
             if (selectedSlot === null) throw new Error("No PKCS#11 slot selected.");
             if (!selectedCertificate) throw new Error("No certificate selected.");
 
@@ -440,6 +473,8 @@ export const useWorkflowActions = () => {
             }
 
             sigRes = { signatureB64: response.signatureB64 };
+
+            // IMPORTANT: PKCS#11 workflow ends here - no Icanopee operations
           } else {
             throw new Error(`Unknown signing method: ${signingMethod as string}`);
           }

@@ -22,18 +22,25 @@ pnpm test
 
 ### 3. Type Checking (Required)
 ```bash
-pnpm type-check
+pnpm run build
 ```
 - TypeScript compilation must succeed without errors
 - All type issues must be resolved
+- This command builds the entire project and validates TypeScript
 
 ## Development Workflow
 
 1. Make your changes
 2. Run `pnpm lint:check` - fix any linting issues
-3. Run `pnpm type-check` - fix any TypeScript errors
+3. Run `pnpm run build` - fix any TypeScript errors
 4. Run `pnpm test` - ensure all tests pass
 5. Only mark task as complete when all checks pass
+
+## Commit Message Guidelines
+
+- Do NOT mention "Claude Code" or any AI assistance in commit messages
+- Focus on technical changes and business value
+- Keep commit messages professional and concise
 
 ## Project Structure Notes
 
