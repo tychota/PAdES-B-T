@@ -9,6 +9,7 @@ import { logPAdES, padesBackendLogger } from "./logger";
 import { errorHandler } from "./middleware/error-handler";
 import { requestLogger } from "./middleware/request-logger";
 import { router as apiRouter } from "./routes/api";
+import { router as docsRouter } from "./routes/docs";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -21,6 +22,7 @@ app.use(requestLogger);
 
 // Routes
 app.use("/api", apiRouter);
+app.use("/api/docs", docsRouter);
 
 // Error handling
 app.use(errorHandler);
